@@ -44,3 +44,15 @@ python3 -m polyfin.backtest      # score resolved markets vs Polymarket (leave-d
 
 The backtest scores only markets with >= $500 volume: FX, NYA, HSI, Nikkei, DAX, FTSE and
 DXY trade ~$10/day on a 0.01/0.99 book, so there is no market price to compare with.
+
+## Stage 2
+
+`polyfin/stage2.py` adds, on top of stage 1: a **futures nowcast** for US stocks/indices when
+their own prints are stale (`S_last · exp(β · r_ES/NQ)`, β from 15m regular-hours returns);
+**vol-regime scaling** `v · R^γ` (trailing-6h realized / expected); **sharpening** `Φ(b·d)`;
+and an optional **market blend**. Fitted and scored leave-one-day-out.
+
+```sh
+python3 -m polyfin.stage2           # evaluate, then fit on all days -> data/stage2_params.json
+python3 -m polyfin.stage2 --live    # price open markets with the saved fit
+```

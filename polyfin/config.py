@@ -81,6 +81,14 @@ OPEN_REF_SERIES = {
     "spx-open-daily-up-or-down": "spx-daily-up-or-down",
 }
 
+# US equities and cash indices: stale outside their own trading, so stage 2
+# nowcasts them from the index futures (which trade ~23h).
+NOWCAST_SYMBOLS = {
+    "AAPL", "MSFT", "AMZN", "GOOGL", "META", "TSLA", "NVDA", "NFLX", "PLTR", "OPEN",
+    "RKLB", "ABNB", "COIN", "HOOD", "MU", "SPY", "EWY", "^GSPC", "^DJI", "^RUT", "^NYA",
+}
+NOWCAST_FUTURES = ["ES=F", "NQ=F"]
+
 # Recorded as model features only; no market settles on them.
 CONTEXT_SYMBOLS = ["ES=F", "NQ=F", "^VIX", "^NDX"]
 

@@ -127,9 +127,10 @@ class Model:
         return et_date(s.target_ts)
 
 
-def live(conn) -> None:
+def live(conn, model=None) -> None:
+    """Print every open market's model probability against its latest book."""
     now = time.time()
-    model = Model(conn)
+    model = model or Model(conn)
     books = {r[0]: r[1:] for r in conn.execute(
         "SELECT b.token_id, b.best_bid, b.best_ask, b.ts FROM pm_books b "
         "JOIN (SELECT token_id, MAX(ts) ts FROM pm_books GROUP BY token_id) l "

@@ -22,6 +22,11 @@ class Bars:
             return None
         return self.close[i]
 
+    def last_bar(self, t: float) -> tuple[int, float] | None:
+        """(ts, close) of the last bar completed by t."""
+        i = bisect_right(self.ts, t - 60) - 1
+        return (self.ts[i], self.close[i]) if i >= 0 else None
+
     def open_at(self, t: float, max_wait: float = 1800) -> float | None:
         """Open of the first bar starting at or after t (an opening print)."""
         i = bisect_left(self.ts, t)

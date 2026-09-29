@@ -15,6 +15,7 @@ market with a profile that has not seen its settlement day.
 from __future__ import annotations
 
 import math
+from bisect import bisect_left
 from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -51,6 +52,7 @@ class VarClock:
         # each boundary).  Summing squared 1m returns instead lets bid/ask bounce
         # in thin pre/post-market trading swamp the estimate (AAPL post-market
         # came out at 3% per session); slot returns pay that noise only twice.
+        realized = []                          # (slot start, r^2) of diffusive slots
         n, i = len(bars), 0
         t0 = int(bars.ts[0]) // SLOT * SLOT if n else 0
         prev = None                            # (close, bar ts) before this boundary
@@ -64,9 +66,15 @@ class VarClock:
                     day, _, s = _slot(b)
                     gap = bars.ts[i] - prev[1] > JUMP_GAP
                     (self.day_jump if gap else self.day_sumsq)[day][s] += r * r
+                    if not gap:
+                        realized.append((b, r * r))
             if j > i:
                 prev = (bars.close[j - 1], bars.ts[j - 1])
             i = j
+        self.rs_ts = [b for b, _ in realized]
+        self.rs_cum = [0.0]
+        for _, x in realized:
+            self.rs_cum.append(self.rs_cum[-1] + x)
 
         # A slot trades if bars were seen there on that weekday, or - for Mon-Fri, so
         # that one holiday does not switch a weekday off - in that slot on >= 2 weekdays.
@@ -125,6 +133,20 @@ class VarClock:
             return 0.0
         cums = self._cumulative(exclude_day)
         return self._at(cums, t2) - self._at(cums, t1)
+
+    def realized(self, t1: float, t2: float, exclude_day=None) -> tuple[float, float]:
+        """(realized, expected) diffusive variance over whole slots in [t1, t2], using only
+        slots complete by t2 - no lookahead."""
+        a = -(-int(t1) // SLOT) * SLOT                # first slot start >= t1
+        z = int(t2) // SLOT * SLOT                    # slots must end by t2
+        if z <= a:
+            return 0.0, 0.0
+        lo, hi = bisect_left(self.rs_ts, a), bisect_left(self.rs_ts, z)
+        cum, _ = self._cumulative(exclude_day)
+        k1, k2 = (a - self.g0) // SLOT, (z - self.g0) // SLOT
+        if k1 < 0 or k2 >= len(cum):
+            return 0.0, 0.0
+        return self.rs_cum[hi] - self.rs_cum[lo], cum[k2] - cum[k1]
 
     def daily_vol(self, exclude_day=None) -> float:
         """Expected stdev of one full trading day (close-to-close), for display."""
