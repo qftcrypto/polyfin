@@ -9,7 +9,11 @@ import urllib.request
 
 log = logging.getLogger("http")
 
-UA = "Mozilla/5.0 (polyfin recorder)"
+# An honest client name.  A bare "Mozilla/5.0" without the rest of a browser's
+# headers reads as a disguised bot: Cloudflare on clob.polymarket.com started
+# returning 403 to it after ~1h of polling (2026-09-29); "polyfin/0.1" is accepted
+# by CLOB, Gamma and Yahoo alike.
+UA = "polyfin/0.1"
 
 
 def get_json(url: str, body=None, retries: int = 3, timeout: float = 30):
