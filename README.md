@@ -27,3 +27,20 @@ Restarts are safe: each task fetches only what is missing since the last stored 
 **Skipped underlyings:** SPCX (exists only on Pyth). Its Polymarket side is still recorded.
 The Yahoo symbol is a predictor, not the settlement value (futures for spot metals, NYMEX
 for Pyth's ICE energy contracts).
+
+## Stage 1 model
+
+`P(yes) = Φ((ln(S_now/ref) − v/2) / √v)` - driftless lognormal on a **variance clock**
+(`polyfin/varclock.py`): per-symbol expected variance of each 15-minute ET slot, from slot
+returns over the recorded week, zero where the asset does not trade, with overnight/weekend
+gaps as a jump at the reopen. `ref` is the prior settlement's price (up/down, opens) or the
+strike. A market whose reference close is still ahead (tomorrow's up/down) prices off the
+variance after that close only, i.e. ~0.5; strikes price off the distance to the strike.
+
+```sh
+python3 -m polyfin.stage1       # price every open market against its latest book
+python3 -m polyfin.backtest      # score resolved markets vs Polymarket (leave-day-out)
+```
+
+The backtest scores only markets with >= $500 volume: FX, NYA, HSI, Nikkei, DAX, FTSE and
+DXY trade ~$10/day on a 0.01/0.99 book, so there is no market price to compare with.

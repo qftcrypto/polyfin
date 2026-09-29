@@ -74,6 +74,13 @@ SERIES: dict[str, tuple[int, str, str | None]] = {
     "hang-seng-daily-up-or-down": (10387, "updown", "^HSI"),
 }
 
+# "Opens up or down" compares the open with the prior close, which is the
+# settlement of the matching close-to-close series.
+OPEN_REF_SERIES = {
+    "spy-open-daily-up-or-down": "spy-daily-up-or-down",
+    "spx-open-daily-up-or-down": "spx-daily-up-or-down",
+}
+
 # Recorded as model features only; no market settles on them.
 CONTEXT_SYMBOLS = ["ES=F", "NQ=F", "^VIX", "^NDX"]
 
