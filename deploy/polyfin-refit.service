@@ -1,0 +1,9 @@
+[Unit]
+Description=polyfin stage 2 refit (writes data/stage2_params.json; traders reload it)
+After=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/opt/polyfin
+ExecStart=/opt/polyfin/.venv/bin/python -m polyfin.stage2

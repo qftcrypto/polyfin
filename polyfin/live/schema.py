@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS trade.orders (
     shares_req    DOUBLE PRECISION,
     asks          JSONB,                     -- ask ladder at decision, best first
     features      JSONB,                     -- model inputs, for later analysis
-    status        TEXT NOT NULL,             -- pending|filled|partial|nofill|rejected|unknown
+    status        TEXT NOT NULL,             -- pending|filled|partial|nofill|rejected|unknown|failed
     shares_filled DOUBLE PRECISION NOT NULL DEFAULT 0,
     avg_price     DOUBLE PRECISION,
     fee           DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS trade.orders (
 CREATE INDEX IF NOT EXISTS orders_created ON trade.orders (created_at);
 CREATE INDEX IF NOT EXISTS orders_unsettled ON trade.orders (condition_id)
     WHERE settled_at IS NULL AND shares_filled > 0;
+-- live-only bookkeeping (added after the first paper rows existed)
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS trade_ids     JSONB;
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS settle_state  TEXT;    -- confirmed|failed|NULL
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS reconciled_at BIGINT;  -- checked against venue
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS redeemed_at   BIGINT;
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS redeemed_by   TEXT;    -- auto|relayer|none
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS redeem_detail TEXT;
+
 -- at most one live-or-possibly-live position per market and mode
 CREATE UNIQUE INDEX IF NOT EXISTS orders_one_position ON trade.orders (mode, condition_id)
     WHERE status IN ('pending', 'filled', 'partial', 'unknown');

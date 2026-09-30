@@ -1,0 +1,16 @@
+[Unit]
+Description=polyfin trader - PAPER (runs alongside live as its twin)
+After=network-online.target docker.service polyfin-recorder.service
+Wants=network-online.target
+
+[Service]
+User=deploy
+WorkingDirectory=/opt/polyfin
+ExecStart=/opt/polyfin/.venv/bin/python -m polyfin.live.engine
+Restart=always
+RestartSec=15
+MemoryMax=768M
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

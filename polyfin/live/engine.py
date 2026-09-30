@@ -29,8 +29,9 @@ from ..stage1 import load_specs
 from ..stage2 import PARAMS_PATH, Stage2
 from ..varclock import ET
 from . import config as C
-from .control import effective
-from .executor import LiveExecutor, PaperExecutor
+from ..settings import Credentials
+from .control import effective, set_mode
+from .executor import PaperExecutor
 from .fees import fee_per_share
 from .sizing import limit_price, shares_for
 
@@ -72,6 +73,8 @@ def settle(conn) -> int:
         "SELECT o.id, o.side, o.shares_filled, o.avg_price, o.fee, m.outcome_yes "
         "FROM trade.orders o JOIN markets m USING (condition_id) "
         "WHERE o.settled_at IS NULL AND o.shares_filled > 0 AND m.closed = 1 "
+        # a live fill settles only once the venue has confirmed it (reconcile.py)
+        "AND (o.mode = 'paper' OR o.reconciled_at IS NOT NULL) "
         "AND m.outcome_yes IS NOT NULL").fetchall()
     now = int(time.time())
     for oid, side, sh, avg, fee, oy in rows:
@@ -126,21 +129,61 @@ class Trader:
         self.conn = conn
         self.launch_mode = launch_mode
         self.executors = {"paper": PaperExecutor()}
+        self.clob = self.chain = self.relayer = None
+        self.last_redeem = 0.0
         if launch_mode == "live":
-            self.executors["live"] = LiveExecutor()
+            from .clob import ClobExecutor
+            self.creds = Credentials()
+            self.clob = ClobExecutor(self.creds)          # raises if FIN_ creds are missing
+            self.executors["live"] = self.clob
+            self._init_chain()
         self.betas: dict = {}
+        self.params_mtime = None
         self.params = self._params()
 
-    @staticmethod
-    def _params() -> dict:
+    def _init_chain(self) -> None:
+        """Redemption fallback only; trading works without it (auto-redeem)."""
+        from .chain import Chain, Relayer
         try:
+            self.chain = Chain(self.creds.rpc_url, self.creds.funder)
+        except Exception as e:
+            log.warning("no Polygon RPC - redemption fallback disabled: %s", str(e)[:120])
+        try:
+            self.relayer = Relayer(self.creds.relayer_api_key, self.creds.relayer_api_key_address)
+        except ValueError as e:
+            log.warning("%s - redemption fallback disabled", e)
+
+    def _params(self) -> dict:
+        try:
+            self.params_mtime = PARAMS_PATH.stat().st_mtime
             return json.loads(PARAMS_PATH.read_text())
         except (OSError, ValueError):
             log.warning("no %s - using stage 2 nowcast without sharpening", PARAMS_PATH)
             return {"gamma": 0.0, "b": 1.0}
 
+    def _reload_params(self) -> None:
+        """Pick up a refit (deploy/polyfin-refit.timer) without a restart."""
+        try:
+            m = PARAMS_PATH.stat().st_mtime
+        except OSError:
+            return
+        if m != self.params_mtime:
+            self.params = self._params()
+            self.betas.clear()
+            log.info("stage 2 params reloaded: %s", self.params)
+
     def cycle(self) -> None:
         conn, now = self.conn, time.time()
+        if self.clob is not None:                      # live bookkeeping runs even paused
+            from .reconcile import reconcile, redeem
+            reconcile(conn, self.clob)
+            if now - self.last_redeem > 300:
+                redeem(conn, self.chain, self.relayer, self.creds)
+                self.last_redeem = now
+        # a paper row left 'pending' by a crash would block its market forever
+        conn.execute("UPDATE trade.orders SET status='nofill', error='stale pending' "
+                     "WHERE mode='paper' AND status='pending' AND created_at < %s", (now - 60,))
+        conn.commit()
         n = settle(conn)
         if n:
             log.info("settled %d orders", n)
@@ -148,14 +191,17 @@ class Trader:
         if mode == "paused":
             log.info("paused (%s)", reason)
             return
-        newest = conn.execute("SELECT MAX(ts) FROM bars WHERE symbol = ANY(%s)",
-                              (mcfg.NOWCAST_FUTURES,)).fetchone()[0]
+        # recorder liveness: the newest bar of ANY symbol.  Not the futures -
+        # Yahoo serves CME bars 10-20 minutes late, so they always look stale.
+        newest = conn.execute("SELECT MAX(ts) FROM bars WHERE ts > %s",
+                              (int(now) - 6 * 3600,)).fetchone()[0]
         conn.commit()
         if newest is None or now - newest > C.MAX_BARS_AGE_S:
             log.warning("bars stale (newest %s) - recorder down? no entries",
                         None if newest is None else f"{now - newest:.0f}s old")
             return
 
+        self._reload_params()
         risk = risk_state(conn, mode, now)
         liquid = liquid_series(conn)
         specs = [s for s in load_specs(conn)
@@ -178,6 +224,7 @@ class Trader:
         conn.commit()
         books = fetch_books([t for s, _, _ in priced for t in (s.token_yes, tokens[s.condition_id])])
 
+        balance = self.clob.collateral_balance() if mode == "live" else None
         entered = 0
         for s, p, f in priced:
             best = None
@@ -201,10 +248,24 @@ class Trader:
                          C.MIN_SHARES, lim or 0, C.MAX_ORDER_USD)
                 continue
             why = blocked(risk, mode, shares * lim)
+            if why == "stop-after-fills gate":
+                # latched in the control row, so a restart cannot resume it
+                set_mode(conn, "paused", f"live stop-after-fills gate "
+                         f"({C.STOP_AFTER_FILLS_LIVE} fills) - review, then `control live`")
+                log.warning("stop-after-fills gate reached: trading paused for review")
+                break
+            if why is None and mode == "live":
+                cost = shares * lim * 1.02                 # + fee headroom
+                if balance is None:
+                    why = "balance unknown"
+                elif balance < cost:
+                    why = f"balance ${balance:.2f} < ${cost:.2f}"
             if why:
                 log.info("blocked (%s): %s %s edge %.3f", why, s.series_slug, side, edge)
                 continue
             self._enter(mode, s, side, tok, ps, edge, lim, shares, bk, f, now)
+            if balance is not None:
+                balance -= shares * lim * 1.02
             risk = risk_state(conn, mode, time.time())
             entered += 1
         log.info("%s: %d markets priced, %d entries | today %d orders, open $%.2f, pnl $%+.2f",
@@ -231,7 +292,8 @@ class Trader:
             conn.rollback()
             return
         try:
-            fill = self.executors[mode].take(tok, lim, shares, bk["asks"])
+            label = f"{s.series_slug} {side}" + (f" >{s.strike:g}" if s.strike else "")
+            fill = self.executors[mode].take(tok, lim, shares, bk["asks"], label=label)
         except Exception as e:                     # never let one order stop the loop
             log.exception("execution failed")
             conn.execute("UPDATE trade.orders SET status='unknown', error=%s WHERE id=%s",
@@ -240,9 +302,12 @@ class Trader:
             return
         conn.execute(
             "UPDATE trade.orders SET status=%s, shares_filled=%s, avg_price=%s, fee=%s, "
-            "venue_order_id=%s, error=%s, filled_at=%s WHERE id=%s",
+            "venue_order_id=%s, error=%s, filled_at=%s, trade_ids=%s, settle_state=%s "
+            "WHERE id=%s",
             (fill.status, fill.shares, fill.avg_price, fill.fee, fill.venue_order_id,
-             fill.error, int(time.time()) if fill.shares else None, oid))
+             fill.error, int(time.time()) if fill.shares else None,
+             json.dumps(list(fill.trade_ids)) if fill.trade_ids else None,
+             "confirmed" if fill.settled else None, oid))
         conn.commit()
         log.info("%s %s %s%s: p=%.3f ask=%.2f edge=%.3f -> %s %.0f @ %s", mode, s.series_slug,
                  side, f" >{s.strike:g}" if s.strike else "", ps, ask, edge, fill.status,

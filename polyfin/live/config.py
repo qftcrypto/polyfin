@@ -28,4 +28,4 @@ MAX_DAILY_LOSS_USD = 30.0    # realized loss per ET day; hit -> no new entries t
 STOP_AFTER_FILLS_LIVE = 20   # live only: pause after this many fills, for review
 
 # -- data freshness ---------------------------------------------------------------
-MAX_BARS_AGE_S = 15 * 60     # newest bar across all symbols; older = recorder down
+MAX_BARS_AGE_S = 15 * 60     # newest bar of any symbol; older = recorder down

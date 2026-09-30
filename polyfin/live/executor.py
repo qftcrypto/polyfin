@@ -1,8 +1,9 @@
 """Executors: the only code that differs between paper and live.
 
-Both take a FAK ("fill and kill") limit BUY: fill what is available at or below
-the limit right now, cancel the rest, never rest on the book.  This is what
-polycrypto trades with, and it is what measures fillability directly.
+Paper is below; live is `clob.ClobExecutor`.  Both take a FAK ("fill and kill")
+limit BUY: fill what is available at or below the limit right now, cancel the
+rest, never rest on the book.  This is what polycrypto trades with, and it is
+what measures fillability directly.
 """
 from __future__ import annotations
 
@@ -19,6 +20,8 @@ class Fill:
     fee: float = 0.0
     venue_order_id: str | None = None
     error: str | None = None
+    trade_ids: tuple = ()           # CLOB trade ids, for settlement reconciliation
+    settled: bool | None = None     # True on-chain confirmed, False failed, None unknown
     detail: dict = field(default_factory=dict)
 
 
@@ -31,7 +34,8 @@ class PaperExecutor:
     """
     mode = "paper"
 
-    def take(self, token_id: str, limit: float, shares: float, asks: list) -> Fill:
+    def take(self, token_id: str, limit: float, shares: float, asks: list,
+             label: str = "") -> Fill:
         left, cost = shares, 0.0
         for price, size in asks:
             if price > limit + 1e-9 or left <= 0:
@@ -44,13 +48,3 @@ class PaperExecutor:
             return Fill("nofill")
         avg = cost / got
         return Fill("filled" if left <= 1e-9 else "partial", got, avg, taker_fee(got, avg))
-
-
-class LiveExecutor:
-    """Placeholder until the wallet exists: polycrypto's ClobExecutorV2 goes here
-    (py-clob-client-v2, signature type 3, FAK, HTTP-400 no-match handling,
-    get_order polling for 'delayed')."""
-    mode = "live"
-
-    def __init__(self, *_, **__):
-        raise NotImplementedError("live execution is not built yet - run without --live")

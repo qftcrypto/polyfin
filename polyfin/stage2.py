@@ -274,7 +274,10 @@ def main() -> None:
     pfull = prob_vec(a["xn"], a["v"], a["R"], params["gamma"], params["b"])
     params["blend"] = [float(x) for x in fit_blend(pfull, a["pm"], a["y"])]
     params["fitted_at"] = int(time.time())
-    PARAMS_PATH.write_text(json.dumps(params, indent=1))
+    # atomic: the traders reload this file while running
+    tmp = PARAMS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(params, indent=1))
+    tmp.replace(PARAMS_PATH)
     print(f"\nfit on all days: {params} -> {PARAMS_PATH}")
 
 

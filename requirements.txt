@@ -3,6 +3,7 @@
 psycopg2-binary>=2.9       # PostgreSQL (TimescaleDB container, port 5446)
 numpy>=1.26                # stage 2 fitting
 
-# live trading (phase 3, not needed for paper):
-# py-clob-client-v2>=0.1   # signature type 3 (POLY_1271) orders
-# web3>=6.0                # redemption fallback
+# live trading
+py_clob_client_v2==1.1.0   # signature type 3 (POLY_1271) orders; pinned: same as polycrypto
+web3>=7                    # on-chain reads + redemption fallback
+eth-account>=0.13          # relayer batch signing

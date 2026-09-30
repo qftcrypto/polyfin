@@ -1,0 +1,18 @@
+[Unit]
+Description=polyfin trader - LIVE authority (trades real money only while trade.control says live)
+After=network-online.target docker.service polyfin-recorder.service
+Wants=network-online.target
+
+[Service]
+User=deploy
+WorkingDirectory=/opt/polyfin
+# --live grants authority; `python -m polyfin.live.control live` must also be set.
+# Restart=always cannot undo a pause: the stop-after-fills gate latches the row.
+ExecStart=/opt/polyfin/.venv/bin/python -m polyfin.live.engine --live
+Restart=always
+RestartSec=15
+MemoryMax=768M
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

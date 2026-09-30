@@ -80,5 +80,9 @@ $30 daily realized loss, live pauses itself after 20 fills. Entries stop if bars
 ```
 
 Live requires both `--live` at launch and `control live` (a ratchet: the row can pause a
-process or allow live, never make a paper process live). The live executor is not built
-yet; it will port polycrypto's `ClobExecutorV2` once the FIN_ wallet exists.
+process or allow live, never make a paper process live). Live execution
+(`polyfin/live/clob.py`) is a port of polycrypto's `ClobExecutorV2`: py-clob-client-v2,
+signature type 3, one-shot FAK, venue no-match/`delayed`/rested handling, and nothing is
+booked that the venue did not report. `reconcile.py` resolves `unknown` orders from venue
+trades, follows on-chain settlement, and redeems winners that auto-redeem missed (relayer).
+Wallet setup, preflight and deployment: [deploy/README.md](deploy/README.md).

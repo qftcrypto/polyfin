@@ -73,9 +73,11 @@ class DB:
     def __init__(self, dsn: str | None = None):
         self.conn = psycopg2.connect(dsn or pg_dsn())
 
-    def execute(self, sql: str, params=()):
+    def execute(self, sql: str, params=None):
         cur = self.conn.cursor()
-        cur.execute(sql, params)
+        # without params psycopg2 leaves '%' alone (LIKE 'x%'); with any, even (),
+        # every '%' must be escaped as '%%'
+        cur.execute(sql, params) if params else cur.execute(sql)
         return cur
 
     def executemany(self, sql: str, rows) -> None:
