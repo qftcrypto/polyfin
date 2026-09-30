@@ -275,6 +275,7 @@ def main() -> None:
     params["blend"] = [float(x) for x in fit_blend(pfull, a["pm"], a["y"])]
     params["fitted_at"] = int(time.time())
     # atomic: the traders reload this file while running
+    PARAMS_PATH.parent.mkdir(parents=True, exist_ok=True)   # data/ is not in git
     tmp = PARAMS_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps(params, indent=1))
     tmp.replace(PARAMS_PATH)
