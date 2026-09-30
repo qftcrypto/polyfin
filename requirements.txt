@@ -1,0 +1,8 @@
+# polyfin runtime (Python 3.11).  Rebuild with:
+#   uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requirements.txt
+psycopg2-binary>=2.9       # PostgreSQL (TimescaleDB container, port 5446)
+numpy>=1.26                # stage 2 fitting
+
+# live trading (phase 3, not needed for paper):
+# py-clob-client-v2>=0.1   # signature type 3 (POLY_1271) orders
+# web3>=6.0                # redemption fallback

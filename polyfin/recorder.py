@@ -14,19 +14,19 @@ import logging
 import time
 
 from . import config, polymarket, yahoo
-from .db import DEFAULT_PATH, connect
+from .db import connect
 
 log = logging.getLogger("recorder")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=str(DEFAULT_PATH))
+    ap.add_argument("--dsn", default=None, help="libpq DSN; default from FIN_PG* in .env")
     ap.add_argument("--once", action="store_true")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    conn = connect(args.db)
+    conn = connect(args.dsn)
     symbols = config.yahoo_symbols()
 
     # order matters on a pass: history and books need discovered markets
@@ -37,7 +37,7 @@ def main() -> None:
         ("books", config.BOOKS_EVERY, lambda: polymarket.record_books(conn)),
     ]
     due = {name: 0.0 for name, _, _ in tasks}
-    log.info("db=%s  series=%d  symbols=%d", args.db, len(config.SERIES), len(symbols))
+    log.info("series=%d  symbols=%d", len(config.SERIES), len(symbols))
 
     while True:
         for name, every, fn in tasks:
@@ -49,6 +49,7 @@ def main() -> None:
                 log.info("%-9s %6d rows  %.1fs", name, n, time.time() - t0)
             except Exception:
                 log.exception("%s failed", name)
+                conn.rollback()     # a failed statement poisons the transaction
             due[name] = t0 + every
         if args.once:
             return

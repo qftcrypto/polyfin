@@ -1,0 +1,50 @@
+# polyfin database.
+#
+# TimescaleDB image to match the sibling projects (polycrypto 5444, polyweather
+# 5441, poly-hist 5434, ...); the tables are plain Postgres for now.
+#
+# PORT 5446: polycrypto is 5444 and 5445 is taken on the laptop by
+# canadapulse-timescaledb.  Keep the same port on the production box so a DSN
+# copied between them keeps working.  Bound to 127.0.0.1 - nothing is exposed.
+services:
+  db:
+    image: timescale/timescaledb:2.26.4-pg16
+    container_name: polyfin-timescaledb
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FIN_PGPORT:-5446}:5432"
+    environment:
+      POSTGRES_USER: ${FIN_PGUSER:-polyfin}
+      POSTGRES_DB: ${FIN_PGDATABASE:-polyfin}
+      POSTGRES_PASSWORD: ${FIN_PGPASSWORD:?set FIN_PGPASSWORD in .env}
+      TIMESCALEDB_TELEMETRY: "off"
+    # Capped so it cannot squeeze sibling databases on a shared host.  A week of
+    # recording is ~1-2M small rows.
+    mem_limit: 512m
+    memswap_limit: 512m
+    shm_size: 128m
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - max_connections=20
+      - -c
+      - wal_compression=on
+    volumes:
+      - polyfin_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FIN_PGUSER:-polyfin} -d ${FIN_PGDATABASE:-polyfin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  polyfin_pgdata:

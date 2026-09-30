@@ -21,7 +21,7 @@ import math
 from collections import defaultdict
 
 from .data import load_history
-from .db import DEFAULT_PATH, connect
+from .db import connect
 from .stage1 import Model, load_specs
 
 TAU_BUCKETS = [(0, 1), (1, 3), (3, 7), (7, 24), (24, 1e9)]
@@ -98,18 +98,18 @@ def table(title, groups):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=str(DEFAULT_PATH))
+    ap.add_argument("--dsn", default=None, help="libpq DSN; default from FIN_PG* in .env")
     ap.add_argument("--step", type=int, default=15, help="minutes between scored points")
     ap.add_argument("--hours", type=float, default=36, help="score this far before target")
     ap.add_argument("--min-volume", type=float, default=500, help="USD traded, to be scored")
     args = ap.parse_args()
-    conn = connect(args.db)
+    conn = connect(args.dsn)
     model = Model(conn)
     specs = load_specs(conn)
 
     proxy_report(model, specs)
     volume = dict(conn.execute(
-        "SELECT condition_id, COALESCE(json_extract(raw, '$.volume'), 0) FROM markets"))
+        "SELECT condition_id, COALESCE((raw->>'volume')::float, 0) FROM markets"))
     liquid = [s for s in specs if float(volume.get(s.condition_id) or 0) >= args.min_volume]
     skipped = sorted({s.series_slug for s in specs if s.outcome is not None} -
                      {s.series_slug for s in liquid if s.outcome is not None})

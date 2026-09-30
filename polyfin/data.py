@@ -37,7 +37,7 @@ class Bars:
 
 def load_bars(conn, symbol: str) -> Bars:
     return Bars(conn.execute(
-        "SELECT ts, open, close FROM bars WHERE symbol=? AND close > 0 ORDER BY ts",
+        "SELECT ts, open, close FROM bars WHERE symbol=%s AND close > 0 ORDER BY ts",
         (symbol,)).fetchall())
 
 
@@ -57,4 +57,4 @@ class Series:
 
 def load_history(conn, token_id: str) -> Series:
     return Series(conn.execute(
-        "SELECT ts, p FROM pm_history WHERE token_id=? ORDER BY ts", (token_id,)).fetchall())
+        "SELECT ts, p FROM pm_history WHERE token_id=%s ORDER BY ts", (token_id,)).fetchall())

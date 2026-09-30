@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 
 from .config import OPEN_REF_SERIES
 from .data import Bars, load_bars
-from .db import DEFAULT_PATH, connect
+from .db import connect
 from .varclock import VarClock, et_date
 
 
@@ -157,8 +157,8 @@ def live(conn, model=None) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=str(DEFAULT_PATH))
-    live(connect(ap.parse_args().db))
+    ap.add_argument("--dsn", default=None, help="libpq DSN; default from FIN_PG* in .env")
+    live(connect(ap.parse_args().dsn))
 
 
 if __name__ == "__main__":

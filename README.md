@@ -6,7 +6,8 @@ oracles: [doc/polymarket_daily_market.md](doc/polymarket_daily_market.md).
 
 ## Recorder
 
-Stdlib-only Python (3.9+), no keys. Backfills the last 7 days, then keeps recording:
+Python 3.11 venv (`requirements.txt`), PostgreSQL in Docker on port 5446, no API keys.
+Backfills the last 7 days, then keeps recording:
 
 | Table | Source | What | Every |
 |---|---|---|---|
@@ -16,9 +17,12 @@ Stdlib-only Python (3.9+), no keys. Backfills the last 7 days, then keeps record
 | `pm_books` | CLOB `/books` | top-5 book of the Up/Yes token for unsettled markets | 30 s |
 
 ```sh
-python3 -m polyfin.recorder              # run forever  -> data/polyfin.sqlite
-python3 -m polyfin.recorder --once       # one pass, then exit
-python3 -m unittest discover tests       # offline parser tests
+cp .env.example .env                     # set FIN_PGPASSWORD
+docker compose up -d                     # polyfin-timescaledb on 127.0.0.1:5446
+uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requirements.txt
+.venv/bin/python -m polyfin.db           # create the schema
+.venv/bin/python -m polyfin.recorder     # run forever (--once: one pass)
+.venv/bin/python -m unittest discover tests
 ```
 
 Restarts are safe: each task fetches only what is missing since the last stored row
@@ -38,8 +42,8 @@ strike. A market whose reference close is still ahead (tomorrow's up/down) price
 variance after that close only, i.e. ~0.5; strikes price off the distance to the strike.
 
 ```sh
-python3 -m polyfin.stage1       # price every open market against its latest book
-python3 -m polyfin.backtest      # score resolved markets vs Polymarket (leave-day-out)
+.venv/bin/python -m polyfin.stage1  # price every open market against its latest book
+.venv/bin/python -m polyfin.backtest # score resolved markets vs Polymarket (leave-day-out)
 ```
 
 The backtest scores only markets with >= $500 volume: FX, NYA, HSI, Nikkei, DAX, FTSE and
@@ -53,6 +57,28 @@ their own prints are stale (`S_last · exp(β · r_ES/NQ)`, β from 15m regular-
 and an optional **market blend**. Fitted and scored leave-one-day-out.
 
 ```sh
-python3 -m polyfin.stage2           # evaluate, then fit on all days -> data/stage2_params.json
-python3 -m polyfin.stage2 --live    # price open markets with the saved fit
+.venv/bin/python -m polyfin.stage2         # evaluate, then fit on all days -> data/stage2_params.json
+.venv/bin/python -m polyfin.stage2 --live  # price open markets with the saved fit
 ```
+
+## Trader (paper now, live later)
+
+`polyfin/live/`: one decision loop for paper and live; only the executor differs. Every 30s
+it settles resolved positions, reads the control row and risk state from the `trade` schema,
+prices open markets of liquid series with stage 2 (sharpening only within 3h of the target),
+fetches fresh books for both tokens, and buys the side with the larger edge when
+`model_p − ask − fee ≥ 0.05` - a FAK at the highest whole-cent price that keeps that edge,
+whole shares, ~$3 (at least the venue's 5 shares, never over $5). One position per market.
+
+Limits (counted from the database, `polyfin/live/config.py`): 30 orders/day, $100 open,
+$30 daily realized loss, live pauses itself after 20 fills. Entries stop if bars go stale.
+
+```sh
+.venv/bin/python -m polyfin.live.engine           # paper (default); --once for one cycle
+.venv/bin/python -m polyfin.live.report           # fill rate, edge, P&L by group
+.venv/bin/python -m polyfin.live.control pause "why"   # stop entries; `paper` resumes
+```
+
+Live requires both `--live` at launch and `control live` (a ratchet: the row can pause a
+process or allow live, never make a paper process live). The live executor is not built
+yet; it will port polycrypto's `ClobExecutorV2` once the FIN_ wallet exists.

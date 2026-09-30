@@ -34,7 +34,7 @@ def record_bars(conn, symbols: list[str]) -> int:
     now = time.time()
     total = 0
     for sym in symbols:
-        last = conn.execute("SELECT MAX(ts) FROM bars WHERE symbol=?", (sym,)).fetchone()[0]
+        last = conn.execute("SELECT MAX(ts) FROM bars WHERE symbol=%s", (sym,)).fetchone()[0]
         days = LOOKBACK_DAYS if last is None else int((now - last) // 86400) + 1
         try:
             rows = fetch_bars(sym, days)
@@ -43,7 +43,7 @@ def record_bars(conn, symbols: list[str]) -> int:
             continue
         # the newest bar is still forming; upsert so it is overwritten next poll
         conn.executemany(
-            "INSERT INTO bars VALUES (?,?,?,?,?,?,?) ON CONFLICT(symbol, ts) DO UPDATE SET "
+            "INSERT INTO bars VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(symbol, ts) DO UPDATE SET "
             "open=excluded.open, high=excluded.high, low=excluded.low, "
             "close=excluded.close, volume=excluded.volume",
             [(sym, *r) for r in rows])

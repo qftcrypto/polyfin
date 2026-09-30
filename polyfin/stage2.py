@@ -29,24 +29,27 @@ import numpy as np
 
 from .config import NOWCAST_FUTURES, NOWCAST_SYMBOLS
 from .data import load_history
-from .db import DEFAULT_PATH, connect
+from .settings import ROOT
+from .db import connect
 from .stage1 import Model, Spec, live, load_specs, norm_cdf
 from .varclock import ET, SLOT
 
-PARAMS_PATH = DEFAULT_PATH.parent / "stage2_params.json"
+PARAMS_PATH = ROOT / "data" / "stage2_params.json"
 VOL_WINDOW = 6 * 3600
 R_CLIP = (0.25, 4.0)
 MIN_R2 = 0.1                      # below this the futures say little about the stock
 
 GAMMAS = np.linspace(0.0, 1.0, 5)
 SHARPS = np.linspace(0.6, 2.5, 39)
+SHARPEN_HOURS = 3.0               # live pricing sharpens only this close to the target
 
 
 class Stage2:
-    def __init__(self, conn, params: dict | None = None):
+    def __init__(self, conn, params: dict | None = None, betas: dict | None = None):
         self.m1 = Model(conn)
         self.params = params or {"gamma": 0.0, "b": 1.0}
-        self._beta: dict = {}
+        # pass a shared dict to reuse betas across rebuilds (they move slowly)
+        self._beta: dict = betas if betas is not None else {}
 
     # -- 1. futures nowcast ---------------------------------------------------
     def beta(self, sym: str):
@@ -116,8 +119,11 @@ class Stage2:
         f = self.features(s, t, exclude_day)
         if f is None:
             return None
+        # sharpening helps near the target and hurts further out (see evaluate())
+        tau_h = (s.target_ts - t) / 3600
+        b = self.params["b"] if tau_h <= self.params.get("sharpen_hours", 99) else 1.0
         return float(prob_vec(np.array([f[1]]), np.array([f[2]]), np.array([f[3]]),
-                              self.params["gamma"], self.params["b"])[0])
+                              self.params["gamma"], b)[0])
 
 
 def _rth(t: float) -> bool:
@@ -146,7 +152,7 @@ def logloss(p, y):
 
 def collect(model: Stage2, specs, conn, step=15, hours=36, min_volume=500):
     volume = dict(conn.execute(
-        "SELECT condition_id, COALESCE(json_extract(raw, '$.volume'), 0) FROM markets"))
+        "SELECT condition_id, COALESCE((raw->>'volume')::float, 0) FROM markets"))
     rows = []
     for s in specs:
         if s.outcome is None or float(volume.get(s.condition_id) or 0) < min_volume:
@@ -200,7 +206,7 @@ def evaluate(a):
     days = sorted(set(a["day"]))
     n = len(a["y"])
     out = {k: np.full(n, np.nan) for k in
-           ["stage1", "+nowcast", "+vol", "+sharpen", "+blend", "market"]}
+           ["stage1", "+nowcast", "+vol", "+sharpen", "sharp<=3h", "+blend", "market"]}
     out["stage1"] = prob_vec(a["xr"], a["v"], a["R"], 0.0, 1.0)
     out["+nowcast"] = prob_vec(a["xn"], a["v"], a["R"], 0.0, 1.0)
     out["market"] = a["pm"]
@@ -212,6 +218,9 @@ def evaluate(a):
         pf = fit_sharp(a, train)
         full = lambda m: prob_vec(a["xn"][m], a["v"][m], a["R"][m], pf["gamma"], pf["b"])
         out["+sharpen"][test] = full(test)
+        near = test & (a["tau"] <= SHARPEN_HOURS)
+        out["sharp<=3h"][test] = prob_vec(a["xn"][test], a["v"][test], a["R"][test], pf["gamma"], 1.0)
+        out["sharp<=3h"][near] = full(near)
         w = fit_blend(full(train), a["pm"][train], a["y"][train])
         out["+blend"][test] = 1 / (1 + np.exp(-(w[0] * logit(full(test)) + w[1] * logit(a["pm"][test]))))
         fits.append((d, pv["gamma"], pf["gamma"], pf["b"], w))
@@ -237,10 +246,10 @@ def report(a, out, fits):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=str(DEFAULT_PATH))
+    ap.add_argument("--dsn", default=None, help="libpq DSN; default from FIN_PG* in .env")
     ap.add_argument("--live", action="store_true")
     args = ap.parse_args()
-    conn = connect(args.db)
+    conn = connect(args.dsn)
     if args.live:
         params = json.loads(PARAMS_PATH.read_text())
         print(f"stage 2 params: {params}\n")
@@ -259,7 +268,9 @@ def main() -> None:
     out, fits = evaluate(a)
     report(a, out, fits)
 
-    params = fit_sharp(a, np.ones_like(a["y"], dtype=bool))
+    params = fit_sharp(a, a["tau"] <= SHARPEN_HOURS)
+    params["gamma"] = fit_sharp(a, np.ones_like(a["y"], dtype=bool), fit_b=False)["gamma"]
+    params["sharpen_hours"] = SHARPEN_HOURS
     pfull = prob_vec(a["xn"], a["v"], a["R"], params["gamma"], params["b"])
     params["blend"] = [float(x) for x in fit_blend(pfull, a["pm"], a["y"])]
     params["fitted_at"] = int(time.time())

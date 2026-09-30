@@ -65,9 +65,9 @@ UPSERT_MARKET = """
 INSERT INTO markets (condition_id, event_slug, series_slug, kind, symbol, question, strike,
     token_yes, token_no, event_start, end_ts, closed, outcome_yes, resolution_source,
     updated_at, raw)
-VALUES (:condition_id, :event_slug, :series_slug, :kind, :symbol, :question, :strike,
-    :token_yes, :token_no, :event_start, :end_ts, :closed, :outcome_yes, :resolution_source,
-    :updated_at, :raw)
+VALUES (%(condition_id)s, %(event_slug)s, %(series_slug)s, %(kind)s, %(symbol)s, %(question)s, %(strike)s,
+    %(token_yes)s, %(token_no)s, %(event_start)s, %(end_ts)s, %(closed)s, %(outcome_yes)s, %(resolution_source)s,
+    %(updated_at)s, %(raw)s)
 ON CONFLICT(condition_id) DO UPDATE SET
     question=excluded.question, event_start=excluded.event_start, end_ts=excluded.end_ts,
     closed=excluded.closed, outcome_yes=excluded.outcome_yes,
@@ -109,7 +109,7 @@ def record_history(conn) -> int:
     floor = now - LOOKBACK_DAYS * 86400
     rows = conn.execute(
         "SELECT condition_id, token_yes, end_ts, closed, history_ts FROM markets "
-        "WHERE end_ts >= ?", (floor,)).fetchall()
+        "WHERE end_ts >= %s", (floor,)).fetchall()
     total = 0
     for cid, tok, end_ts, closed, hist_ts in rows:
         stop = min(now, (end_ts or now) + 3600)
@@ -124,13 +124,14 @@ def record_history(conn) -> int:
         except Exception as e:
             log.warning("history %s: %s", cid[:10], e)
             continue
-        conn.executemany("INSERT OR REPLACE INTO pm_history VALUES (?,?,?)",
+        conn.executemany("INSERT INTO pm_history VALUES (%s,%s,%s) ON CONFLICT (token_id, ts) "
+                         "DO UPDATE SET p=excluded.p",
                          [(tok, int(x["t"]), float(x["p"])) for x in h])
         # history_ts = covered-through; a resolved market is done once fetched to `stop`,
         # even if its last point is earlier (no more points will ever appear)
         covered = stop if closed else max((int(x["t"]) for x in h), default=hist_ts)
         if covered:
-            conn.execute("UPDATE markets SET history_ts=? WHERE condition_id=?", (covered, cid))
+            conn.execute("UPDATE markets SET history_ts=%s WHERE condition_id=%s", (covered, cid))
         conn.commit()
         total += len(h)
         time.sleep(0.1)
@@ -151,7 +152,7 @@ def parse_book(b: dict) -> tuple:
 def record_books(conn) -> int:
     """Snapshot the Yes book of every market that has not settled yet."""
     toks = [r[0] for r in conn.execute(
-        "SELECT token_yes FROM markets WHERE closed=0 AND end_ts > ?", (int(time.time()),))]
+        "SELECT token_yes FROM markets WHERE closed=0 AND end_ts > %s", (int(time.time()),))]
     total = 0
     for i in range(0, len(toks), BOOKS_BATCH):
         chunk = toks[i:i + BOOKS_BATCH]
@@ -160,7 +161,8 @@ def record_books(conn) -> int:
         except Exception as e:
             log.warning("books: %s", e)
             continue
-        conn.executemany("INSERT OR IGNORE INTO pm_books VALUES (?,?,?,?,?,?,?,?)",
+        conn.executemany("INSERT INTO pm_books VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+                         "ON CONFLICT DO NOTHING",
                          [parse_book(b) for b in books if b.get("asset_id")])
         conn.commit()
         total += len(books)
