@@ -61,7 +61,14 @@ ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS redeemed_at   BIGINT;
 ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS redeemed_by   TEXT;    -- auto|relayer|none
 ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS redeem_detail TEXT;
 
--- at most one live-or-possibly-live position per market and mode
-CREATE UNIQUE INDEX IF NOT EXISTS orders_one_position ON trade.orders (mode, condition_id)
+-- entry slot: 'early' (> LATE_WINDOW_H before target) or 'late'
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS slot TEXT;
+UPDATE trade.orders SET slot = CASE WHEN tau_h <= 3 THEN 'late' ELSE 'early' END
+    WHERE slot IS NULL;
+
+-- at most one live-or-possibly-live position per market, mode and slot
+DROP INDEX IF EXISTS trade.orders_one_position;
+CREATE UNIQUE INDEX IF NOT EXISTS orders_one_position_slot
+    ON trade.orders (mode, condition_id, slot)
     WHERE status IN ('pending', 'filled', 'partial', 'unknown');
 """

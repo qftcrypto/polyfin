@@ -52,3 +52,31 @@ class TestControl(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSlots(unittest.TestCase):
+    def risk(self, early=(0, 0.0), late=(0, 0.0), pnl=0.0):
+        return {"orders_today": early[0] + late[0], "open_usd": early[1] + late[1],
+                "pnl_today": pnl, "fills_total": 0,
+                "slots": {"early": {"orders_today": early[0], "open_usd": early[1]},
+                          "late": {"orders_today": late[0], "open_usd": late[1]}}}
+
+    def test_slot_boundary(self):
+        from polyfin.live.engine import slot_for
+        self.assertEqual(slot_for(3 * 3600), "late")
+        self.assertEqual(slot_for(3 * 3600 + 1), "early")
+
+    def test_full_early_budget_does_not_block_late(self):
+        from polyfin.live.engine import blocked
+        r = self.risk(early=(20, 59.0))
+        self.assertEqual(blocked(r, "paper", 3.0, "early"), "max early orders per day")
+        self.assertIsNone(blocked(r, "paper", 3.0, "late"))
+
+    def test_slot_and_total_exposure_caps(self):
+        from polyfin.live.engine import blocked
+        self.assertEqual(blocked(self.risk(late=(1, 38.0)), "paper", 3.0, "late"),
+                         "max late open exposure")
+        self.assertEqual(blocked(self.risk(early=(1, 59.0), late=(1, 39.0)), "paper", 3.0,
+                                 "late"), "max late open exposure")
+        self.assertEqual(blocked(self.risk(pnl=-30.0), "paper", 3.0, "late"),
+                         "daily loss limit")

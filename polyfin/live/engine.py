@@ -85,10 +85,15 @@ def settle(conn) -> int:
     return len(rows)
 
 
+def slot_for(tau_s: float) -> str:
+    return "late" if tau_s <= C.LATE_WINDOW_H * 3600 else "early"
+
+
 def risk_state(conn, mode: str, now: float) -> dict:
+    """Totals, plus orders_today / open_usd per slot under "slots"."""
     day = et_day_start(now)
-    r = conn.execute(
-        "SELECT "
+    rows = conn.execute(
+        "SELECT slot,"
         " COUNT(*) FILTER (WHERE created_at >= %(day)s AND (shares_filled > 0 OR status IN "
         "   ('pending', 'unknown'))),"
         " COALESCE(SUM(shares_filled * avg_price + fee) FILTER (WHERE settled_at IS NULL "
@@ -97,15 +102,28 @@ def risk_state(conn, mode: str, now: float) -> dict:
         "   ('pending', 'unknown')), 0),"
         " COALESCE(SUM(pnl) FILTER (WHERE settled_at >= %(day)s), 0),"
         " COUNT(*) FILTER (WHERE shares_filled > 0)"
-        " FROM trade.orders WHERE mode = %(mode)s", {"day": day, "mode": mode}).fetchone()
+        " FROM trade.orders WHERE mode = %(mode)s GROUP BY slot",
+        {"day": day, "mode": mode}).fetchall()
     conn.commit()
-    return {"orders_today": r[0], "open_usd": float(r[1]), "pnl_today": float(r[2]),
-            "fills_total": r[3]}
+    slots = {s: {"orders_today": 0, "open_usd": 0.0} for s in C.MAX_OPEN_USD_SLOT}
+    risk = {"orders_today": 0, "open_usd": 0.0, "pnl_today": 0.0, "fills_total": 0,
+            "slots": slots}
+    for slot, n, open_usd, pnl, fills in rows:
+        if slot in slots:
+            slots[slot] = {"orders_today": n, "open_usd": float(open_usd)}
+        risk["orders_today"] += n
+        risk["open_usd"] += float(open_usd)
+        risk["pnl_today"] += float(pnl)
+        risk["fills_total"] += fills
+    return risk
 
 
-def blocked(risk: dict, mode: str, cost: float) -> str | None:
-    if risk["orders_today"] >= C.MAX_ORDERS_PER_DAY:
-        return "max orders per day"
+def blocked(risk: dict, mode: str, cost: float, slot: str) -> str | None:
+    sr = risk["slots"][slot]
+    if sr["orders_today"] >= C.MAX_ORDERS_PER_DAY_SLOT[slot]:
+        return f"max {slot} orders per day"
+    if sr["open_usd"] + cost > C.MAX_OPEN_USD_SLOT[slot]:
+        return f"max {slot} open exposure"
     if risk["open_usd"] + cost > C.MAX_OPEN_USD:
         return "max open exposure"
     if risk["pnl_today"] <= -C.MAX_DAILY_LOSS_USD:
@@ -115,11 +133,11 @@ def blocked(risk: dict, mode: str, cost: float) -> str | None:
     return None
 
 
-def has_position_or_cooldown(conn, mode: str, cid: str, now: float) -> bool:
+def has_position_or_cooldown(conn, mode: str, cid: str, slot: str, now: float) -> bool:
     r = conn.execute(
         "SELECT bool_or(status = ANY(%s)), MAX(created_at) FILTER (WHERE status = 'nofill') "
-        "FROM trade.orders WHERE mode = %s AND condition_id = %s",
-        (list(OPEN_STATUSES), mode, cid)).fetchone()
+        "FROM trade.orders WHERE mode = %s AND condition_id = %s AND slot = %s",
+        (list(OPEN_STATUSES), mode, cid, slot)).fetchone()
     conn.commit()
     return bool(r[0]) or (r[1] is not None and now - r[1] < C.NOFILL_COOLDOWN_S)
 
@@ -239,7 +257,8 @@ class Trader:
             if best is None or best[0] < C.MIN_EDGE:
                 continue
             edge, side, tok, ps, bk = best
-            if has_position_or_cooldown(conn, mode, s.condition_id, now):
+            slot = slot_for(s.target_ts - now)
+            if has_position_or_cooldown(conn, mode, s.condition_id, slot, now):
                 continue
             lim = limit_price(ps)
             shares = shares_for(lim) if lim else None
@@ -247,7 +266,7 @@ class Trader:
                 log.info("skip %s %s: min size %d x %.2f > $%.0f cap", s.series_slug, side,
                          C.MIN_SHARES, lim or 0, C.MAX_ORDER_USD)
                 continue
-            why = blocked(risk, mode, shares * lim)
+            why = blocked(risk, mode, shares * lim, slot)
             if why == "stop-after-fills gate":
                 # latched in the control row, so a restart cannot resume it
                 set_mode(conn, "paused", f"live stop-after-fills gate "
@@ -263,16 +282,19 @@ class Trader:
             if why:
                 log.info("blocked (%s): %s %s edge %.3f", why, s.series_slug, side, edge)
                 continue
-            self._enter(mode, s, side, tok, ps, edge, lim, shares, bk, f, now)
+            self._enter(mode, s, side, tok, ps, edge, lim, shares, bk, f, now, slot)
             if balance is not None:
                 balance -= shares * lim * 1.02
             risk = risk_state(conn, mode, time.time())
             entered += 1
-        log.info("%s: %d markets priced, %d entries | today %d orders, open $%.2f, pnl $%+.2f",
-                 mode, len(priced), entered, risk["orders_today"], risk["open_usd"],
+        sl = risk["slots"]
+        log.info("%s: %d markets priced, %d entries | today %d orders (early %d, late %d), "
+                 "open $%.2f (early $%.2f, late $%.2f), pnl $%+.2f", mode, len(priced), entered,
+                 risk["orders_today"], sl["early"]["orders_today"], sl["late"]["orders_today"],
+                 risk["open_usd"], sl["early"]["open_usd"], sl["late"]["open_usd"],
                  risk["pnl_today"])
 
-    def _enter(self, mode, s, side, tok, ps, edge, lim, shares, bk, f, now) -> None:
+    def _enter(self, mode, s, side, tok, ps, edge, lim, shares, bk, f, now, slot) -> None:
         conn = self.conn
         feats = {"xr": f[0], "xn": f[1], "v": f[2], "R": f[3], **{k: self.params.get(k)
                  for k in ("gamma", "b", "sharpen_hours")}}
@@ -281,12 +303,13 @@ class Trader:
             oid = conn.execute(
                 "INSERT INTO trade.orders (created_at, mode, condition_id, series_slug, kind, "
                 "strike, side, token_id, target_ts, tau_h, model_p, best_bid, best_ask, ask_size,"
-                " edge, limit_price, shares_req, asks, features, status) VALUES "
-                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending') RETURNING id",
+                " edge, limit_price, shares_req, asks, features, slot, status) VALUES "
+                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending') "
+                "RETURNING id",
                 (int(now), mode, s.condition_id, s.series_slug, s.kind, s.strike, side, tok,
                  s.target_ts, (s.target_ts - now) / 3600, ps,
                  bk["bids"][0][0] if bk["bids"] else None, ask, size, edge, lim, shares,
-                 json.dumps(bk["asks"][:10]), json.dumps(feats))).fetchone()[0]
+                 json.dumps(bk["asks"][:10]), json.dumps(feats), slot)).fetchone()[0]
             conn.commit()
         except psycopg2.errors.UniqueViolation:
             conn.rollback()
@@ -309,8 +332,8 @@ class Trader:
              json.dumps(list(fill.trade_ids)) if fill.trade_ids else None,
              "confirmed" if fill.settled else None, oid))
         conn.commit()
-        log.info("%s %s %s%s: p=%.3f ask=%.2f edge=%.3f -> %s %.0f @ %s", mode, s.series_slug,
-                 side, f" >{s.strike:g}" if s.strike else "", ps, ask, edge, fill.status,
+        log.info("%s [%s] %s %s%s: p=%.3f ask=%.2f edge=%.3f -> %s %.0f @ %s", mode, slot,
+                 s.series_slug, side, f" >{s.strike:g}" if s.strike else "", ps, ask, edge, fill.status,
                  fill.shares, f"{fill.avg_price:.3f}" if fill.avg_price else "-")
 
 

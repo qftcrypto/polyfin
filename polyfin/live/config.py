@@ -11,6 +11,13 @@ NEAR_TIE_BP = 3.0            # inside 30 min, skip if |ln S/ref| < 3bp: Pyth may
 NEAR_TIE_TAU_S = 1800
 NOFILL_COOLDOWN_S = 600      # after a miss, wait before trying the same market again
 
+# Two entry slots per market, each allowed one position.  "early" entries are the
+# overnight / next-day bets near 0.5 (bigger payout, one correlated market bet);
+# "late" entries fall inside the last LATE_WINDOW_H, where the model is most
+# accurate (favourites at 0.70-0.85, high win rate).  Separate slots so the early
+# entry no longer blocks the late one, and the report can judge each on its own.
+LATE_WINDOW_H = 3.0
+
 # -- market scope ---------------------------------------------------------------
 MIN_SERIES_VOLUME = 500      # median USD volume of the series' last week of markets
 EXCLUDE_SERIES: set[str] = set()
@@ -22,8 +29,10 @@ MAX_ORDER_USD = 5.0          # hard cap: skip rather than exceed
 FEE_RATE = 0.04              # finance taker fee: rate * p * (1 - p) per share
 
 # -- risk limits (counted from the database, so a restart cannot reset them) ----
-MAX_ORDERS_PER_DAY = 30      # filled or possibly-filled entries per ET day
-MAX_OPEN_USD = 100.0         # cost of unsettled positions
+MAX_OPEN_USD = 100.0         # cost of unsettled positions, both slots together
+# per slot, so early entries cannot use up the budget before the late window opens
+MAX_ORDERS_PER_DAY_SLOT = {"early": 20, "late": 20}   # possibly-filled entries per ET day
+MAX_OPEN_USD_SLOT = {"early": 60.0, "late": 40.0}
 MAX_DAILY_LOSS_USD = 30.0    # realized loss per ET day; hit -> no new entries today
 STOP_AFTER_FILLS_LIVE = 20   # live only: pause after this many fills, for review
 

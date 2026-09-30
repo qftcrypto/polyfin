@@ -21,7 +21,7 @@ def main() -> None:
     conn = connect()
     rows = conn.execute(
         "SELECT created_at, series_slug, kind, side, tau_h, model_p, best_ask, edge, "
-        "shares_req, status, shares_filled, avg_price, fee, outcome, pnl "
+        "shares_req, status, shares_filled, avg_price, fee, outcome, pnl, slot "
         "FROM trade.orders WHERE mode=%s AND created_at >= %s ORDER BY created_at",
         (args.mode, time.time() - args.days * 86400)).fetchall()
     if not rows:
@@ -45,7 +45,7 @@ def main() -> None:
     print(f"   {'':30} {'tried':>5} {'filled':>6} {'full%':>6} {'edge':>6} {'cost $':>8} "
           f"{'settled':>7} {'win%':>6} {'pnl $':>8}")
     summary("all", rows)
-    for key, idx in (("kind", 2), ("side", 3)):
+    for key, idx in (("slot", 15), ("kind", 2), ("side", 3)):
         g = defaultdict(list)
         for r in rows:
             g[r[idx]].append(r)
