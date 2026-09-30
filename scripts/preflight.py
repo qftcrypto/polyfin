@@ -60,8 +60,11 @@ def main() -> int:
         print("\n  fill these in .env (scripts/derive_api_creds.py makes the API_* ones)")
         return 1
     check(c.signature_type == 3, "signature type is 3 (POLY_1271)", f"got {c.signature_type}")
-    note("FIN_POLYGON_RPC_URL " + ("set" if c.rpc_url else "unset - public RPCs, redemption only"))
-    note("relayer key " + ("set" if c.relayer_api_key else "unset - no redeem fallback"))
+    for ok, msg in ((c.rpc_url, "FIN_POLYGON_RPC_URL " + ("set" if c.rpc_url else
+                     "unset - public RPCs, redemption only")),
+                    (c.relayer_api_key, "relayer key " + ("set" if c.relayer_api_key else
+                     "unset - no redeem fallback"))):
+        print(f"  {OK if ok else WARN} {msg}")
 
     print("\n=== 2. client (v2 - v1 cannot sign type 3) ===")
     from py_clob_client_v2.client import ClobClient

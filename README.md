@@ -4,6 +4,41 @@ Research and trading for Polymarket **finance daily** markets (stock/ETF, commod
 and index up/downs, plus the SPY/WTI/META "closes above" strikes). Market survey and
 oracles: [doc/polymarket_daily_market.md](doc/polymarket_daily_market.md).
 
+## Wallet
+
+Signature type 3 (POLY_1271): the EOA signs orders; the deposit-wallet proxy is the maker,
+holds the pUSD and the positions, and is the only address that can trade. Used by polyfin
+only - never shared with polycrypto or any other bot. Keys live in `/opt/polyfin/.env`
+(`FIN_*`); the proxy is read from `FIN_DEPOSIT_WALLET`, never derived.
+
+| role | address |
+|---|---|
+| **EOA** - signs orders, pays its own gas (POL) | `0xf55077757D444D299bf436e64d4be68e670f960d` |
+| **Proxy** (deposit wallet) - funder, holds collateral and positions | `0x4993dcb1061d190b8f5f7ce34ce352c85873553f` |
+
+Proof of ownership (2026-09-30):
+
+- proxy `owner()` (selector `0x8da5cb5b`) returns the EOA; the relayer key address is the EOA.
+- 1 pUSD round trip with `scripts/move_funds.py`, balances verified with `balanceOf`:
+
+```
+EOA -> proxy   direct, EOA paid gas   tx 0x85c133ffbb26161d0219d74a1542ba6bf112d1dc88713b46fd1da623f3cab6f6
+                                      block 94738317, status 1, gas 65,120
+proxy -> EOA   relayer, gasless       tx 0xacac6cf946bb8599612c423e205b9fa2d03d32e29031b46916abc5716a8d9a07
+                                      relayer id 01a0f4c0-1fa6-7cff-bef5-6e01c57b0f12
+EOA   300.000000 -> 299.000000 -> 300.000000 pUSD      proxy 0 -> 1 -> 0 pUSD
+```
+
+- `scripts/preflight.py`: an order signed locally has maker == signer == proxy,
+  signatureType 3, an ERC-7739-wrapped signature (636 chars); CLOB L2 auth works.
+
+Approvals (both verified on chain 2026-09-30, already set from earlier use of this wallet):
+pUSD `approve` -> CTF Exchange V2 `0xE111180000d2663C0091e4f400237545B87B996B`, and CTF
+`setApprovalForAll` -> AutoRedeemOperator `0xf3cfb6a6ebfeb51876289eb235719eb1c65252b0`.
+
+Move money with `scripts/move_funds.py --direction eoa-to-proxy|proxy-to-eoa --amount N`
+(dry run unless `--send`).
+
 ## Recorder
 
 Python 3.11 venv (`requirements.txt`), PostgreSQL in Docker on port 5446, no API keys.
