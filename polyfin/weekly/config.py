@@ -41,13 +41,16 @@ SERIES: dict[str, tuple[int, str, str]] = {
     "dxy-hit-price-weekly": (12626, "DX-Y.NYB", "fx"),
 }
 
-# 1m bars the daily recorder does not already take
-EXTRA_SYMBOLS = ["MSTR", "SKHY"]
+# 1m bars for every weekly underlying: the weekly package runs on the laptop, where
+# the daily recorder no longer does (it moved to the server)
+def bar_symbols() -> list[str]:
+    return sorted({s for _, s, _ in SERIES.values()})
 
 # recorder intervals, seconds
 DISCOVERY_EVERY = 900
 HISTORY_EVERY = 600
 BOOKS_EVERY = 60
 BARS_EVERY = 120
+BARS_1H_EVERY = 3600
 
 BACKFILL_FIDELITY = 30       # minutes per point for resolved weeks

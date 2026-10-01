@@ -27,6 +27,41 @@ CREATE TABLE IF NOT EXISTS weekly.markets (
 CREATE INDEX IF NOT EXISTS weekly_markets_end ON weekly.markets (end_ts);
 CREATE INDEX IF NOT EXISTS weekly_markets_event ON weekly.markets (event_slug);
 
+-- weekly paper orders (one position per market; the arm trades only No)
+CREATE TABLE IF NOT EXISTS weekly.orders (
+    id            BIGSERIAL PRIMARY KEY,
+    created_at    BIGINT NOT NULL,
+    arm           TEXT NOT NULL,
+    condition_id  TEXT NOT NULL,
+    event_slug    TEXT NOT NULL,
+    symbol        TEXT NOT NULL,
+    direction     TEXT NOT NULL,
+    strike        DOUBLE PRECISION NOT NULL,
+    side          TEXT NOT NULL,             -- yes (touch) | no (no touch)
+    token_id      TEXT NOT NULL,
+    end_ts        BIGINT NOT NULL,
+    tau_h         DOUBLE PRECISION,
+    spot          DOUBLE PRECISION,          -- proxy price, offset-corrected
+    var_left      DOUBLE PRECISION,          -- k^2 * session variance to the end
+    model_p       DOUBLE PRECISION,          -- P(this side wins)
+    best_bid      DOUBLE PRECISION,
+    best_ask      DOUBLE PRECISION,
+    ask_size      DOUBLE PRECISION,
+    edge          DOUBLE PRECISION,
+    limit_price   DOUBLE PRECISION,
+    shares_req    DOUBLE PRECISION,
+    asks          JSONB,
+    status        TEXT NOT NULL,             -- filled | partial | nofill
+    shares_filled DOUBLE PRECISION NOT NULL DEFAULT 0,
+    avg_price     DOUBLE PRECISION,
+    fee           DOUBLE PRECISION NOT NULL DEFAULT 0,
+    outcome       DOUBLE PRECISION,          -- payout per share of this side
+    pnl           DOUBLE PRECISION,
+    settled_at    BIGINT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS weekly_orders_one_position
+    ON weekly.orders (arm, condition_id) WHERE status IN ('filled', 'partial');
+
 -- Yahoo 1h bars: years of history for the touch backtest (1m only covers ~8 days)
 CREATE TABLE IF NOT EXISTS weekly.bars_1h (
     symbol TEXT NOT NULL,

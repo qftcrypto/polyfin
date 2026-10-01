@@ -22,12 +22,12 @@ from .discovery import discover, record_history
 log = logging.getLogger("weekly-backfill")
 
 
-def record_bars_1h(conn, symbols) -> int:
+def record_bars_1h(conn, symbols, rng: str = "730d") -> int:
     total = 0
     for sym in symbols:
         try:
             p = get_json(f"https://query1.finance.yahoo.com/v8/finance/chart/"
-                         f"{urllib.parse.quote(sym)}?interval=1h&range=730d")
+                         f"{urllib.parse.quote(sym)}?interval=1h&range={rng}")
         except Exception as e:
             log.warning("%s: %s", sym, e)
             continue

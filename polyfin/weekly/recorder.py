@@ -15,6 +15,7 @@ from ..db import connect
 from ..http import get_json
 from ..polymarket import parse_book
 from . import config as W
+from .backfill import record_bars_1h
 from .discovery import discover, record_history
 
 log = logging.getLogger("weekly-recorder")
@@ -51,7 +52,8 @@ def main() -> None:
         ("discovery", W.DISCOVERY_EVERY, lambda: discover(conn)),
         ("history", W.HISTORY_EVERY, lambda: record_history(conn, fidelity=1)),
         ("books", W.BOOKS_EVERY, lambda: record_books(conn)),
-        ("bars", W.BARS_EVERY, lambda: yahoo.record_bars(conn, W.EXTRA_SYMBOLS)),
+        ("bars", W.BARS_EVERY, lambda: yahoo.record_bars(conn, W.bar_symbols())),
+        ("bars_1h", W.BARS_1H_EVERY, lambda: record_bars_1h(conn, W.bar_symbols(), "5d")),
     ]
     due = {n: 0.0 for n, _, _ in tasks}
     log.info("weekly series=%d", len(W.SERIES))
