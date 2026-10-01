@@ -57,6 +57,7 @@ BUDGET_USD = 3.0             # target notional per order
 MIN_SHARES = 5               # venue minimum (orderMinSize) - at 0.90 that is $4.50
 MAX_ORDER_USD = 5.0          # hard cap: skip rather than exceed
 FEE_RATE = 0.04              # finance taker fee: rate * p * (1 - p) per share
+MAX_SLIP = 0.01              # never pay more than best ask + 1c (user rule, 2026-10-01)
 
 # -- risk limits (counted from the database, so a restart cannot reset them) ----
 # Per mode.  Paper has none (2026-10-01): caps only distort a paper arm's sample,

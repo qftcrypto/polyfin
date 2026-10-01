@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-from .config import BUDGET_USD, MAX_ORDER_USD, MIN_EDGE, MIN_SHARES
+from .config import BUDGET_USD, MAX_ORDER_USD, MAX_SLIP, MIN_EDGE, MIN_SHARES
 from .fees import fee_per_share
 
 
@@ -22,6 +22,16 @@ def limit_price(p: float, min_edge: float = MIN_EDGE) -> float | None:
             return L
         cents -= 1
     return None
+
+
+def exec_limit(p: float, min_edge: float, best_ask: float,
+               max_slip: float = MAX_SLIP) -> float | None:
+    """The order limit: the model limit (keeps min_edge after fee), but never above
+    best ask + max_slip.  Whole cents, like limit_price."""
+    lim = limit_price(p, min_edge)
+    if lim is None:
+        return None
+    return min(lim, math.floor((best_ask + max_slip) * 100 + 1e-9) / 100)
 
 
 def shares_for(price: float, budget: float = BUDGET_USD) -> int | None:

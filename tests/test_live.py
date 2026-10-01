@@ -15,6 +15,13 @@ class TestSizing(unittest.TestCase):
         self.assertLess(0.90 - (L + 0.01) - fee_per_share(L + 0.01), 0.05)
         self.assertIsNone(limit_price(0.05, 0.05))
 
+    def test_exec_limit_caps_at_ask_plus_1c(self):
+        from polyfin.live.sizing import exec_limit
+        self.assertEqual(exec_limit(0.90, 0.05, 0.70), 0.71)   # model allows 0.84
+        self.assertEqual(exec_limit(0.60, 0.05, 0.54), 0.54)   # model limit binds first
+        self.assertEqual(exec_limit(0.90, 0.05, 0.705), 0.71)  # 0.001-tick ask, whole cents
+        self.assertEqual(exec_limit(0.90, 0.05, 0.70, max_slip=0.0), 0.70)
+
     def test_whole_cents_and_shares(self):
         L = limit_price(0.6337, 0.05)
         self.assertAlmostEqual(L * 100, round(L * 100), places=9)

@@ -33,7 +33,7 @@ from ..settings import Credentials
 from .control import effective, set_mode
 from .executor import PaperExecutor
 from .fees import fee_per_share
-from .sizing import limit_price, shares_for
+from .sizing import exec_limit, shares_for
 
 log = logging.getLogger("trader")
 
@@ -310,7 +310,7 @@ class Trader:
             if best is None or best[0] < need:
                 continue
             edge, side, tok, ps, bk = best
-            lim = limit_price(ps, need)
+            lim = exec_limit(ps, need, bk["asks"][0][0])
             shares = shares_for(lim) if lim else None
             if not shares:
                 log.info("[%s] skip %s %s: min size %d x %.2f > $%.0f cap", arm, s.series_slug,
@@ -387,7 +387,7 @@ class Trader:
             if best is None:
                 continue
             edge, side, tok, ps, bk, need = best
-            lim = limit_price(ps, need)
+            lim = exec_limit(ps, need, bk["asks"][0][0])
             shares = shares_for(lim) if lim else None
             if not shares:
                 continue
