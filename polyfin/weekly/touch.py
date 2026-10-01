@@ -42,6 +42,29 @@ def prob_touch(direction: str, S: float, H: float, v: float) -> float:
     return min(max(p, 0.0), 1.0)
 
 
+def ndtr(x):
+    """Vectorized standard normal CDF (Abramowitz-Stegun 7.1.26, |error| < 1.5e-7)."""
+    import numpy as np
+    z = np.abs(np.asarray(x, float)) / np.sqrt(2)
+    t = 1 / (1 + 0.3275911 * z)
+    erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t
+               + 0.254829592) * t * np.exp(-z * z)
+    return 0.5 * (1 + np.sign(x) * erf)
+
+
+def prob_touch_vec(up, S, H, v):
+    """Vectorized prob_touch: up (bool array), S, H, v arrays."""
+    import numpy as np
+    S, H, v = np.asarray(S, float), np.asarray(H, float), np.maximum(np.asarray(v, float), 1e-14)
+    up = np.asarray(up, bool)
+    h, sv = np.abs(np.log(H / S)), np.sqrt(v)
+    pu = ndtr((-h - v / 2) / sv) + np.exp(-h) * ndtr((-h + v / 2) / sv)
+    pd = ndtr((-h + v / 2) / sv) + np.exp(h) * ndtr((-h - v / 2) / sv)
+    p = np.where(up, pu, pd)
+    beyond = np.where(up, S >= H, S <= H)
+    return np.clip(np.where(beyond, 1.0, p), 0.0, 1.0)
+
+
 def in_session(ts: float, session: str) -> bool:
     d = datetime.fromtimestamp(ts, ET)
     wd, hm = d.weekday(), (d.hour, d.minute)

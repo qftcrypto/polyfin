@@ -5,7 +5,8 @@
 1. Proxy fidelity: for each symbol, the offset b (Pyth ~ Yahoo / (1 + b)) that best
    reproduces which strikes were touched, from Yahoo 1h session highs/lows.  Each
    week is scored with b fitted on the OTHER weeks.
-2. Every `every` hours of each resolved market's life, while it is untouched (by
+2. Every `every` hours of each resolved market's life - from the first time its price
+   moves off the opening default (an untraded market prints 0.500) - while untouched (by
    our data and by the market), score the touch model against the market price
    (CLOB history).  A volatility multiplier k (v -> k^2 v) is fitted
    leave-one-week-out.
@@ -29,7 +30,7 @@ from ..data import load_history
 from ..db import connect
 from ..live.fees import fee_per_share
 from ..varclock import ET
-from .touch import HourlyVol, prob_touch
+from .touch import HourlyVol, prob_touch_vec
 
 B_GRID = np.round(np.arange(-0.03, 0.0301, 0.0005), 4)
 K_GRID = np.round(np.arange(0.6, 2.61, 0.05), 2)
@@ -84,6 +85,7 @@ def fit_offsets(mk, vols):
 def points(conn, mk, vols, offs, every_h):
     """(week, symbol, session, cid, tau_h, S, H, direction, v, market_p, y, volume)."""
     pts = []
+    cache = {}                                  # (symbol, t, end): (S, v, hi-lo path) shared
     for m in mk:
         cid, ev, sym, session, d, H, tok, created, end, y, closed_ts, vol = m
         w = week_of(m)
@@ -92,15 +94,24 @@ def points(conn, mk, vols, offs, every_h):
         if b is None or not created:
             continue
         hist = load_history(conn, tok)
-        t = created + 3600
+        if not hist.p:
+            continue
+        # A new market's history sits at its opening default (0.500 for 6,897 of 9,232)
+        # until someone trades; that is no price.  Score only once it has moved.
+        live = next((ts for ts, q in zip(hist.ts, hist.p) if abs(q - hist.p[0]) >= 0.01), None)
+        if live is None:
+            continue
+        t = max(created + 3600, live)
         stop = min(end, closed_ts or end)
+        t = (int(t) // 3600 + 1) * 3600         # align to the hour so strikes share points
         while t < stop - 1800:
-            S = hv.last_close(t)
-            v = hv.var(t, end, session)
+            key = (sym, t, end, created)
+            if key not in cache:
+                cache[key] = (hv.last_close(t), hv.var(t, end, session), hv.extremes(created, t))
+            S, v, (hi, lo) = cache[key]
             p = hist.at(t, max_age=3600)
             if S and v is not None and p is not None:
                 S /= (1 + b)
-                hi, lo = hv.extremes(created, t)
                 touched = hi is not None and (hi / (1 + b) >= H if d == "up" else lo / (1 + b) <= H)
                 if not touched and 0.005 < p < 0.995:
                     pts.append((w, sym, session, cid, (end - t) / 3600, S, H, d, v, p, y, vol))
@@ -109,7 +120,10 @@ def points(conn, mk, vols, offs, every_h):
 
 
 def model_p(pts, k):
-    return np.array([prob_touch(x[7], x[5], x[6], k * k * x[8]) for x in pts])
+    if isinstance(pts, dict):
+        return prob_touch_vec(pts["up"], pts["S"], pts["H"], k * k * pts["v"])
+    return prob_touch_vec([x[7] == "up" for x in pts], [x[5] for x in pts],
+                          [x[6] for x in pts], [k * k * x[8] for x in pts])
 
 
 def ll(p, y):
@@ -142,15 +156,17 @@ def main() -> None:
     print(f"\n{len(pts)} scored points on {len({x[3] for x in pts})} markets "
           f"({len({(x[0], x[1]) for x in pts})} underlying-weeks)")
 
+    A = {"up": np.array([x[7] == "up" for x in pts]), "S": np.array([x[5] for x in pts]),
+         "H": np.array([x[6] for x in pts]), "v": np.array([x[8] for x in pts])}
+    sub = lambda m: {k_: v_[m] for k_, v_ in A.items()}
     # leave-one-week-out k
     p_cv, ks = np.zeros(len(pts)), {}
     for w in sorted(set(wk)):
         tr = wk != w
-        trp = [x for x, t in zip(pts, tr) if t]
-        k = min(K_GRID, key=lambda k: ll(model_p(trp, k), y[tr]).mean())
+        k = min(K_GRID, key=lambda k: ll(model_p(sub(tr), k), y[tr]).mean())
         ks[w] = k
-        p_cv[~tr] = model_p([x for x, t in zip(pts, ~tr) if t], k)
-    p1 = model_p(pts, 1.0)
+        p_cv[~tr] = model_p(sub(~tr), k)
+    p1 = model_p(A, 1.0)
     print(f"   volatility multiplier k (leave-one-week-out): median {np.median(list(ks.values())):.2f}, "
           f"range {min(ks.values()):.2f}-{max(ks.values()):.2f}")
 

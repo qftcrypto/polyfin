@@ -41,3 +41,14 @@ class TestTouch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVectorized(unittest.TestCase):
+    def test_vec_matches_scalar(self):
+        from polyfin.weekly.touch import prob_touch_vec
+        cases = [("up", 100, 101, 1e-4), ("down", 100, 99, 3e-4), ("up", 100, 110, 1e-3),
+                 ("down", 100, 97, 2e-5), ("up", 100, 99, 1e-4)]
+        vec = prob_touch_vec([c[0] == "up" for c in cases], [c[1] for c in cases],
+                             [c[2] for c in cases], [c[3] for c in cases])
+        for c, pv in zip(cases, vec):
+            self.assertAlmostEqual(pv, prob_touch(*c), places=6)
