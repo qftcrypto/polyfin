@@ -28,6 +28,10 @@ ARMS = {
         "base": {"min_edge": 0.05, "slots": {"early", "late"}},
         "e10": {"min_edge": 0.10, "slots": {"early"}},
         "e15": {"min_edge": 0.15, "slots": {"early"}},
+        # scale-in: leg 1 at 0.05 on the better side, then add on THAT side when
+        # the edge widens to 0.10, then 0.15 (research/ladder.py: add-on legs
+        # paid at least as well as the first, 2026-10-01)
+        "ladder": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10, 0.15]},
     },
     "live": {
         "base": {"min_edge": 0.05, "slots": {"early"}},
@@ -45,11 +49,18 @@ MAX_ORDER_USD = 5.0          # hard cap: skip rather than exceed
 FEE_RATE = 0.04              # finance taker fee: rate * p * (1 - p) per share
 
 # -- risk limits (counted from the database, so a restart cannot reset them) ----
-MAX_OPEN_USD = 100.0         # cost of unsettled positions, both slots together
-# per slot, so early entries cannot use up the budget before the late window opens
-MAX_ORDERS_PER_DAY_SLOT = {"early": 20, "late": 20}   # possibly-filled entries per ET day
-MAX_OPEN_USD_SLOT = {"early": 60.0, "late": 40.0}
-MAX_DAILY_LOSS_USD = 30.0    # realized loss per ET day; hit -> no new entries today
+# Per mode.  Paper has none (2026-10-01): caps only distort a paper arm's sample,
+# and left paper/base unable to mirror live once its daily cap was hit.
+LIMITS = {
+    "live": {
+        "open_usd": 100.0,                               # unsettled cost, all slots
+        # per slot, so early entries cannot use up the budget before the late window
+        "orders_per_day_slot": {"early": 20, "late": 20},  # possibly-filled, per ET day
+        "open_usd_slot": {"early": 60.0, "late": 40.0},
+        "daily_loss": 30.0,                              # realized, per ET day
+    },
+    "paper": None,
+}
 STOP_AFTER_FILLS_LIVE = None # live only: pause after this many fills (None = off,
                              # user decision 2026-09-30: pause on request instead)
 

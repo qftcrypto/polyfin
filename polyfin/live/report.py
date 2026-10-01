@@ -22,7 +22,7 @@ def main() -> None:
     conn = connect()
     rows = conn.execute(
         "SELECT created_at, series_slug, kind, side, tau_h, model_p, best_ask, edge, "
-        "shares_req, status, shares_filled, avg_price, fee, outcome, pnl, slot, arm "
+        "shares_req, status, shares_filled, avg_price, fee, outcome, pnl, slot, arm, leg "
         "FROM trade.orders WHERE mode=%s AND created_at >= %s AND (%s IS NULL OR arm = %s) "
         "ORDER BY created_at",
         (args.mode, time.time() - args.days * 86400, args.arm, args.arm)).fetchall()
@@ -52,6 +52,12 @@ def main() -> None:
         g[(r[16], r[15])].append(r)
     for (arm, slot), v in sorted(g.items()):
         summary(f"arm={arm} slot={slot}", v)
+    g = defaultdict(list)
+    for r in rows:
+        g[(r[16], r[17])].append(r)
+    for (arm, leg), v in sorted(g.items()):
+        if any(k[0] == arm and k[1] > 1 for k in g):    # laddered arms only
+            summary(f"arm={arm} leg={leg}", v)
     for key, idx in (("arm", 16), ("slot", 15), ("kind", 2), ("side", 3)):
         g = defaultdict(list)
         for r in rows:

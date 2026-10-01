@@ -70,10 +70,15 @@ UPDATE trade.orders SET slot = CASE WHEN tau_h <= 3 THEN 'late' ELSE 'early' END
 ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS arm TEXT;
 UPDATE trade.orders SET arm = 'base' WHERE arm IS NULL;
 
--- at most one live-or-possibly-live position per market, mode, arm and slot
+-- ladder leg (1 for every single-entry arm)
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS leg INTEGER;
+UPDATE trade.orders SET leg = 1 WHERE leg IS NULL;
+
+-- at most one live-or-possibly-live position per market, mode, arm, slot and leg
 DROP INDEX IF EXISTS trade.orders_one_position;
 DROP INDEX IF EXISTS trade.orders_one_position_slot;
-CREATE UNIQUE INDEX IF NOT EXISTS orders_one_position_arm
-    ON trade.orders (mode, arm, condition_id, slot)
+DROP INDEX IF EXISTS trade.orders_one_position_arm;
+CREATE UNIQUE INDEX IF NOT EXISTS orders_one_position_leg
+    ON trade.orders (mode, arm, condition_id, slot, leg)
     WHERE status IN ('pending', 'filled', 'partial', 'unknown');
 """

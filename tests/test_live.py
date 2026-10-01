@@ -66,7 +66,14 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(C.ARMS["live"], {"base": {"min_edge": 0.05, "slots": {"early"}}})
         self.assertEqual(C.ARMS["paper"]["base"]["slots"], {"early", "late"})
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
-                         {"base": 0.05, "e10": 0.10, "e15": 0.15})
+                         {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05})
+        self.assertEqual(C.ARMS["paper"]["ladder"]["rungs"], [0.05, 0.10, 0.15])
+
+    def test_paper_has_no_caps_live_does(self):
+        from polyfin.live.engine import blocked
+        r = self.risk(early=(500, 5000.0), pnl=-999.0)
+        self.assertIsNone(blocked(r, "paper", 3.0, "early"))
+        self.assertIsNotNone(blocked(r, "live", 3.0, "early"))
 
     def test_higher_arm_limit_is_lower(self):
         # the limit keeps the arm's own edge, so e15 pays at most p - 0.15 - fee
@@ -81,14 +88,62 @@ class TestSlots(unittest.TestCase):
     def test_full_early_budget_does_not_block_late(self):
         from polyfin.live.engine import blocked
         r = self.risk(early=(20, 59.0))
-        self.assertEqual(blocked(r, "paper", 3.0, "early"), "max early orders per day")
-        self.assertIsNone(blocked(r, "paper", 3.0, "late"))
+        self.assertEqual(blocked(r, "live", 3.0, "early"), "max early orders per day")
+        self.assertIsNone(blocked(r, "live", 3.0, "late"))
 
     def test_slot_and_total_exposure_caps(self):
         from polyfin.live.engine import blocked
-        self.assertEqual(blocked(self.risk(late=(1, 38.0)), "paper", 3.0, "late"),
+        self.assertEqual(blocked(self.risk(late=(1, 38.0)), "live", 3.0, "late"),
                          "max late open exposure")
-        self.assertEqual(blocked(self.risk(early=(1, 59.0), late=(1, 39.0)), "paper", 3.0,
+        self.assertEqual(blocked(self.risk(early=(1, 59.0), late=(1, 39.0)), "live", 3.0,
                                  "late"), "max late open exposure")
-        self.assertEqual(blocked(self.risk(pnl=-30.0), "paper", 3.0, "late"),
+        self.assertEqual(blocked(self.risk(pnl=-30.0), "live", 3.0, "late"),
                          "daily loss limit")
+
+
+class TestLadderDB(unittest.TestCase):
+    """Drives Trader._run_arm for the ladder arm against the local Postgres."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from polyfin.db import connect
+            cls.conn = connect()
+        except Exception as e:
+            raise unittest.SkipTest(f"no database: {e}")
+
+    def setUp(self):
+        import time as _t
+        from polyfin.live.engine import Trader
+        from polyfin.stage1 import Spec
+        self.now = _t.time()
+        self.cid = f"test-ladder-{_t.time_ns()}"
+        self.spec = Spec(self.cid, "test-series", "updown", "TEST", "tokY", int(self.now + 20 * 3600),
+                         int(self.now - 3600), None, None, int(self.now + 20 * 3600))
+        self.trader = Trader(self.conn, "paper")
+        self.cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10, 0.15]}
+
+    def tearDown(self):
+        self.conn.execute("DELETE FROM trade.orders WHERE condition_id = %s", (self.cid,))
+        self.conn.commit()
+
+    def cycle(self, p, yes_ask, no_ask):
+        books = {"tokY": {"bids": [], "asks": [(yes_ask, 1000.0)], "ts": 0},
+                 "tokN": {"bids": [], "asks": [(no_ask, 1000.0)], "ts": 0}}
+        self.trader._run_arm("paper", "ladder", self.cfg, [(self.spec, p, (0, 0, 1e-4, 1))],
+                             {self.cid: "tokN"}, books, self.now, None)
+        return self.conn.execute(
+            "SELECT leg, side, round(best_ask::numeric, 2) FROM trade.orders "
+            "WHERE condition_id = %s ORDER BY leg", (self.cid,)).fetchall()
+
+    def test_legs_add_on_widening_same_side_only(self):
+        from decimal import Decimal as D
+        self.assertEqual(self.cycle(0.50, 0.44, 0.60), [(1, "yes", D("0.44"))])   # edge ~0.05
+        self.assertEqual(len(self.cycle(0.50, 0.44, 0.60)), 1)                     # no widening
+        # the No side now looks far better, but add-ons stay on Yes: nothing (Yes edge 0.05)
+        self.assertEqual(len(self.cycle(0.20, 0.44, 0.40)), 1)
+        legs = self.cycle(0.50, 0.38, 0.60)                                        # Yes edge ~0.11
+        self.assertEqual([(l, sd) for l, sd, _ in legs], [(1, "yes"), (2, "yes")])
+        legs = self.cycle(0.50, 0.33, 0.60)                                        # ~0.16
+        self.assertEqual([l for l, _, _ in legs], [1, 2, 3])
+        self.assertEqual(len(self.cycle(0.50, 0.20, 0.60)), 3)                     # no 4th rung

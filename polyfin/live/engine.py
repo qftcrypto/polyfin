@@ -105,7 +105,7 @@ def risk_state(conn, mode: str, now: float, arm: str = "base") -> dict:
         " FROM trade.orders WHERE mode = %(mode)s AND arm = %(arm)s GROUP BY slot",
         {"day": day, "mode": mode, "arm": arm}).fetchall()
     conn.commit()
-    slots = {s: {"orders_today": 0, "open_usd": 0.0} for s in C.MAX_OPEN_USD_SLOT}
+    slots = {s: {"orders_today": 0, "open_usd": 0.0} for s in ("early", "late")}
     risk = {"orders_today": 0, "open_usd": 0.0, "pnl_today": 0.0, "fills_total": 0,
             "slots": slots}
     for slot, n, open_usd, pnl, fills in rows:
@@ -119,14 +119,17 @@ def risk_state(conn, mode: str, now: float, arm: str = "base") -> dict:
 
 
 def blocked(risk: dict, mode: str, cost: float, slot: str) -> str | None:
+    lim = C.LIMITS[mode]
+    if lim is None:                                     # paper: no caps
+        return None
     sr = risk["slots"][slot]
-    if sr["orders_today"] >= C.MAX_ORDERS_PER_DAY_SLOT[slot]:
+    if sr["orders_today"] >= lim["orders_per_day_slot"][slot]:
         return f"max {slot} orders per day"
-    if sr["open_usd"] + cost > C.MAX_OPEN_USD_SLOT[slot]:
+    if sr["open_usd"] + cost > lim["open_usd_slot"][slot]:
         return f"max {slot} open exposure"
-    if risk["open_usd"] + cost > C.MAX_OPEN_USD:
+    if risk["open_usd"] + cost > lim["open_usd"]:
         return "max open exposure"
-    if risk["pnl_today"] <= -C.MAX_DAILY_LOSS_USD:
+    if risk["pnl_today"] <= -lim["daily_loss"]:
         return "daily loss limit"
     if (mode == "live" and C.STOP_AFTER_FILLS_LIVE is not None
             and risk["fills_total"] >= C.STOP_AFTER_FILLS_LIVE):
@@ -134,14 +137,16 @@ def blocked(risk: dict, mode: str, cost: float, slot: str) -> str | None:
     return None
 
 
-def has_position_or_cooldown(conn, mode: str, arm: str, cid: str, slot: str,
-                             now: float) -> bool:
-    r = conn.execute(
-        "SELECT bool_or(status = ANY(%s)), MAX(created_at) FILTER (WHERE status = 'nofill') "
-        "FROM trade.orders WHERE mode = %s AND arm = %s AND condition_id = %s AND slot = %s",
-        (list(OPEN_STATUSES), mode, arm, cid, slot)).fetchone()
+def position_state(conn, mode: str, arm: str, cid: str, slot: str):
+    """(held legs as [(leg, side)] in leg order, last no-fill time) for one market slot."""
+    rows = conn.execute(
+        "SELECT leg, side, status, created_at FROM trade.orders "
+        "WHERE mode = %s AND arm = %s AND condition_id = %s AND slot = %s",
+        (mode, arm, cid, slot)).fetchall()
     conn.commit()
-    return bool(r[0]) or (r[1] is not None and now - r[1] < C.NOFILL_COOLDOWN_S)
+    held = sorted((leg, side) for leg, side, st, _ in rows if st in OPEN_STATUSES)
+    last_nofill = max((t for _, _, st, t in rows if st == "nofill"), default=None)
+    return held, last_nofill
 
 
 class Trader:
@@ -252,9 +257,14 @@ class Trader:
         conn = self.conn
         risk = risk_state(conn, mode, now, arm)
         entered = 0
+        rungs = cfg.get("rungs", [cfg["min_edge"]])
         for s, p, f in priced:
+            slot = slot_for(s.target_ts - now)
+            if slot not in cfg["slots"]:
+                continue
+            sides = [("yes", s.token_yes, p), ("no", tokens[s.condition_id], 1 - p)]
             best = None
-            for side, tok, ps in (("yes", s.token_yes, p), ("no", tokens[s.condition_id], 1 - p)):
+            for side, tok, ps in sides:
                 bk = books.get(tok)
                 if not bk or not bk["asks"]:
                     continue
@@ -262,15 +272,27 @@ class Trader:
                 edge = ps - ask - fee_per_share(ask)
                 if C.MIN_PRICE <= ask <= C.MAX_PRICE and (best is None or edge > best[0]):
                     best = (edge, side, tok, ps, bk)
-            if best is None or best[0] < cfg["min_edge"]:
+            if best is None or best[0] < rungs[0]:
+                continue                                # nothing reaches even the first rung
+            held, last_nofill = position_state(conn, mode, arm, s.condition_id, slot)
+            if len(held) >= len(rungs):
+                continue
+            if last_nofill is not None and now - last_nofill < C.NOFILL_COOLDOWN_S:
+                continue
+            leg, need = len(held) + 1, rungs[len(held)]
+            if held:                                    # add-on legs stay on leg 1's side
+                side0 = held[0][1]
+                best = None
+                for side, tok, ps in sides:
+                    bk = books.get(tok)
+                    if side == side0 and bk and bk["asks"]:
+                        ask = bk["asks"][0][0]
+                        if C.MIN_PRICE <= ask <= C.MAX_PRICE:
+                            best = (ps - ask - fee_per_share(ask), side, tok, ps, bk)
+            if best is None or best[0] < need:
                 continue
             edge, side, tok, ps, bk = best
-            slot = slot_for(s.target_ts - now)
-            if slot not in cfg["slots"]:
-                continue
-            if has_position_or_cooldown(conn, mode, arm, s.condition_id, slot, now):
-                continue
-            lim = limit_price(ps, cfg["min_edge"])
+            lim = limit_price(ps, need)
             shares = shares_for(lim) if lim else None
             if not shares:
                 log.info("[%s] skip %s %s: min size %d x %.2f > $%.0f cap", arm, s.series_slug,
@@ -293,7 +315,7 @@ class Trader:
                 log.info("[%s] blocked (%s): %s %s edge %.3f", arm, why, s.series_slug, side,
                          edge)
                 continue
-            self._enter(mode, arm, s, side, tok, ps, edge, lim, shares, bk, f, now, slot)
+            self._enter(mode, arm, s, side, tok, ps, edge, lim, shares, bk, f, now, slot, leg)
             if balance is not None:
                 balance -= shares * lim * 1.02
             risk = risk_state(conn, mode, time.time(), arm)
@@ -306,7 +328,8 @@ class Trader:
                  sl["late"]["open_usd"], risk["pnl_today"])
         return balance
 
-    def _enter(self, mode, arm, s, side, tok, ps, edge, lim, shares, bk, f, now, slot) -> None:
+    def _enter(self, mode, arm, s, side, tok, ps, edge, lim, shares, bk, f, now, slot,
+               leg=1) -> None:
         conn = self.conn
         feats = {"xr": f[0], "xn": f[1], "v": f[2], "R": f[3], **{k: self.params.get(k)
                  for k in ("gamma", "b", "sharpen_hours")}}
@@ -315,13 +338,13 @@ class Trader:
             oid = conn.execute(
                 "INSERT INTO trade.orders (created_at, mode, condition_id, series_slug, kind, "
                 "strike, side, token_id, target_ts, tau_h, model_p, best_bid, best_ask, ask_size,"
-                " edge, limit_price, shares_req, asks, features, slot, arm, status) VALUES "
-                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending') "
+                " edge, limit_price, shares_req, asks, features, slot, arm, leg, status) VALUES "
+                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending') "
                 "RETURNING id",
                 (int(now), mode, s.condition_id, s.series_slug, s.kind, s.strike, side, tok,
                  s.target_ts, (s.target_ts - now) / 3600, ps,
                  bk["bids"][0][0] if bk["bids"] else None, ask, size, edge, lim, shares,
-                 json.dumps(bk["asks"][:10]), json.dumps(feats), slot, arm)).fetchone()[0]
+                 json.dumps(bk["asks"][:10]), json.dumps(feats), slot, arm, leg)).fetchone()[0]
             conn.commit()
         except psycopg2.errors.UniqueViolation:
             conn.rollback()
@@ -344,8 +367,8 @@ class Trader:
              json.dumps(list(fill.trade_ids)) if fill.trade_ids else None,
              "confirmed" if fill.settled else None, oid))
         conn.commit()
-        log.info("%s/%s [%s] %s %s%s: p=%.3f ask=%.2f edge=%.3f -> %s %.0f @ %s", mode, arm,
-                 slot, s.series_slug, side, f" >{s.strike:g}" if s.strike else "", ps, ask, edge, fill.status,
+        log.info("%s/%s [%s leg %d] %s %s%s: p=%.3f ask=%.2f edge=%.3f -> %s %.0f @ %s", mode,
+                 arm, slot, leg, s.series_slug, side, f" >{s.strike:g}" if s.strike else "", ps, ask, edge, fill.status,
                  fill.shares, f"{fill.avg_price:.3f}" if fill.avg_price else "-")
 
 
