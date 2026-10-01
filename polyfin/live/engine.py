@@ -149,6 +149,23 @@ def position_state(conn, mode: str, arm: str, cid: str, slot: str):
     return held, last_nofill
 
 
+def repeat_state(conn, mode: str, arm: str, cid: str, slot: str) -> dict:
+    """Buys held in one market slot of a repeat arm, and what limits the next one."""
+    rows = conn.execute(
+        "SELECT leg, side, status, created_at, shares_filled, avg_price, fee, shares_req, "
+        "limit_price FROM trade.orders WHERE mode = %s AND arm = %s AND condition_id = %s "
+        "AND slot = %s ORDER BY created_at",
+        (mode, arm, cid, slot)).fetchall()
+    conn.commit()
+    held = [r for r in rows if r[2] in OPEN_STATUSES]
+    cost = sum((r[4] * r[5] + r[6]) if r[4] > 0 else (r[7] * r[8] if r[2] in ("pending", "unknown")
+                                                     else 0.0) for r in held)
+    return {"n": len(held), "last_side": held[-1][1] if held else None,
+            "last_buy": held[-1][3] if held else None, "cost": cost,
+            "next_leg": max((r[0] or 0 for r in rows), default=0) + 1,
+            "last_nofill": max((r[3] for r in rows if r[2] == "nofill"), default=None)}
+
+
 class Trader:
     def __init__(self, conn, launch_mode: str):
         self.conn = conn
@@ -250,7 +267,8 @@ class Trader:
 
         balance = self.clob.collateral_balance() if mode == "live" else None
         for arm, cfg in C.ARMS[mode].items():
-            balance = self._run_arm(mode, arm, cfg, priced, tokens, books, now, balance)
+            run = self._run_repeat_arm if "repeat" in cfg else self._run_arm
+            balance = run(mode, arm, cfg, priced, tokens, books, now, balance)
 
     def _run_arm(self, mode, arm, cfg, priced, tokens, books, now, balance):
         """Enter what this arm's rule allows; returns the balance left (live only)."""
@@ -326,6 +344,64 @@ class Trader:
                  entered, risk["orders_today"], sl["early"]["orders_today"],
                  sl["late"]["orders_today"], risk["open_usd"], sl["early"]["open_usd"],
                  sl["late"]["open_usd"], risk["pnl_today"])
+        return balance
+
+    def _run_repeat_arm(self, mode, arm, cfg, priced, tokens, books, now, balance):
+        """Buy again whenever an edge persists (research/repeat.py).
+
+        Each buy needs edge >= min_edge on the side of the latest buy, or >= cfg["flip"]
+        on the other side (never, if flip is None).  Buys are >= spacing apart and a
+        market holds at most max_buys buys and market_cap_usd of cost.
+        """
+        conn, rp = self.conn, cfg["repeat"]
+        risk = risk_state(conn, mode, now, arm)
+        entered = 0
+        for s, p, f in priced:
+            slot = slot_for(s.target_ts - now)
+            if slot not in cfg["slots"]:
+                continue
+            st = repeat_state(conn, mode, arm, s.condition_id, slot)
+            if st["n"] >= rp["max_buys"]:
+                continue
+            if st["last_buy"] is not None and now - st["last_buy"] < rp["spacing_s"]:
+                continue
+            if st["last_nofill"] is not None and now - st["last_nofill"] < C.NOFILL_COOLDOWN_S:
+                continue
+            best = None
+            for side, tok, ps in (("yes", s.token_yes, p), ("no", tokens[s.condition_id], 1 - p)):
+                bk = books.get(tok)
+                if not bk or not bk["asks"]:
+                    continue
+                ask = bk["asks"][0][0]
+                if not C.MIN_PRICE <= ask <= C.MAX_PRICE:
+                    continue
+                if st["last_side"] is None or side == st["last_side"]:
+                    need = cfg["min_edge"]
+                elif cfg["flip"] is None:
+                    continue
+                else:
+                    need = cfg["flip"]
+                edge = ps - ask - fee_per_share(ask)
+                if edge >= need and (best is None or edge > best[0]):
+                    best = (edge, side, tok, ps, bk, need)
+            if best is None:
+                continue
+            edge, side, tok, ps, bk, need = best
+            lim = limit_price(ps, need)
+            shares = shares_for(lim) if lim else None
+            if not shares:
+                continue
+            if st["cost"] + shares * lim > rp["market_cap_usd"] + 1e-9:
+                continue
+            if blocked(risk, mode, shares * lim, slot):
+                continue
+            self._enter(mode, arm, s, side, tok, ps, edge, lim, shares, bk, f, now, slot,
+                        st["next_leg"])
+            entered += 1
+        risk = risk_state(conn, mode, time.time(), arm)
+        log.info("%s/%s: %d markets priced, %d entries | today %d orders, open $%.2f, pnl $%+.2f",
+                 mode, arm, len(priced), entered, risk["orders_today"], risk["open_usd"],
+                 risk["pnl_today"])
         return balance
 
     def _enter(self, mode, arm, s, side, tok, ps, edge, lim, shares, bk, f, now, slot,

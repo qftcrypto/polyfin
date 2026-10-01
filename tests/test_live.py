@@ -66,7 +66,11 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(C.ARMS["live"], {"base": {"min_edge": 0.05, "slots": {"early"}}})
         self.assertEqual(C.ARMS["paper"]["base"]["slots"], {"early", "late"})
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
-                         {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05})
+                         {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05,
+                          "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05})
+        self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
+                                                                  "rep_flip10")},
+                         {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})
         self.assertEqual(C.ARMS["paper"]["ladder"]["rungs"], [0.05, 0.10, 0.15])
 
     def test_paper_has_no_caps_live_does(self):
@@ -147,3 +151,52 @@ class TestLadderDB(unittest.TestCase):
         legs = self.cycle(0.50, 0.33, 0.60)                                        # ~0.16
         self.assertEqual([l for l, _, _ in legs], [1, 2, 3])
         self.assertEqual(len(self.cycle(0.50, 0.20, 0.60)), 3)                     # no 4th rung
+
+
+class TestRepeatDB(TestLadderDB):
+    """Repeat arms: spacing, hold vs flip thresholds, buy and dollar caps."""
+
+    def run_arm(self, arm, p, yes_ask, no_ask, at):
+        from polyfin.live import config as C
+        books = {"tokY": {"bids": [], "asks": [(yes_ask, 1000.0)], "ts": 0},
+                 "tokN": {"bids": [], "asks": [(no_ask, 1000.0)], "ts": 0}}
+        self.trader._run_repeat_arm("paper", arm, C.ARMS["paper"][arm],
+                                    [(self.spec, p, (0, 0, 1e-4, 1))], {self.cid: "tokN"},
+                                    books, at, None)
+        return [r[0] for r in self.conn.execute(
+            "SELECT side FROM trade.orders WHERE condition_id = %s AND arm = %s ORDER BY id",
+            (self.cid, arm)).fetchall()]
+
+    def test_spacing_and_hold(self):
+        t = self.now
+        self.assertEqual(self.run_arm("rep_hold", 0.50, 0.44, 0.60, t), ["yes"])
+        self.assertEqual(self.run_arm("rep_hold", 0.50, 0.44, 0.60, t + 60), ["yes"])   # < 15m
+        self.assertEqual(self.run_arm("rep_hold", 0.50, 0.44, 0.60, t + 901), ["yes", "yes"])
+        # the model now favours No by a wide margin: hold never switches
+        self.assertEqual(self.run_arm("rep_hold", 0.20, 0.44, 0.60, t + 1802), ["yes", "yes"])
+
+    def test_flip_needs_the_model_and_the_threshold(self):
+        t = self.now
+        self.assertEqual(self.run_arm("rep_flip", 0.50, 0.44, 0.60, t), ["yes"])
+        self.assertEqual(self.run_arm("rep_flip10", 0.50, 0.44, 0.60, t), ["yes"])
+        # No edge ~0.06 (p_no 0.70 vs ask 0.63): rep_flip switches, rep_flip10 does not
+        self.assertEqual(self.run_arm("rep_flip", 0.30, 0.80, 0.63, t + 901), ["yes", "no"])
+        self.assertEqual(self.run_arm("rep_flip10", 0.30, 0.80, 0.63, t + 901), ["yes"])
+        # No edge ~0.11: now rep_flip10 switches too
+        self.assertEqual(self.run_arm("rep_flip10", 0.30, 0.80, 0.58, t + 1802), ["yes", "no"])
+
+    def test_buy_and_dollar_caps(self):
+        t = self.now
+        for k in range(14):                              # 10-buy cap
+            sides = self.run_arm("rep_hold", 0.50, 0.30, 0.75, t + k * 901)
+        self.assertEqual(len(sides), 10)
+        cost = self.conn.execute(
+            "SELECT SUM(shares_filled * avg_price + fee) FROM trade.orders "
+            "WHERE condition_id = %s AND arm = 'rep_hold'", (self.cid,)).fetchone()[0]
+        self.conn.commit()
+        self.assertLessEqual(cost, 30.0)
+        self.conn.execute("DELETE FROM trade.orders WHERE condition_id = %s", (self.cid,))
+        self.conn.commit()
+        for k in range(14):                              # $30 cap: 5 shares x 0.80 = $4+ each
+            sides = self.run_arm("rep_hold", 0.95, 0.80, 0.25, t + k * 901)
+        self.assertEqual(len(sides), 7)                  # 7 x ~$4.03 = $28.2; an 8th > $30

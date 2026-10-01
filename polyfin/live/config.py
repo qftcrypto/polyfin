@@ -17,6 +17,8 @@ NOFILL_COOLDOWN_S = 600      # after a miss, wait before trying the same market 
 # accurate (favourites at 0.70-0.85, high win rate).  Separate slots so the early
 # entry no longer blocks the late one, and the report can judge each on its own.
 LATE_WINDOW_H = 3.0
+REPEAT = {"spacing_s": 15 * 60, "max_buys": 10, "market_cap_usd": 30.0}
+
 # Arms: rule variants traded side by side on the same model prices and books.
 # Each arm has its own positions and risk limits.  `base` is the reference rule;
 # live trades only `base`, early slot (2026-09-30: the late-slot sharpening refit
@@ -32,6 +34,14 @@ ARMS = {
         # the edge widens to 0.10, then 0.15 (research/ladder.py: add-on legs
         # paid at least as well as the first, 2026-10-01)
         "ladder": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10, 0.15]},
+        # repeat buying (research/repeat.py, research/hedge.py): another $3 every
+        # time an edge >= min_edge persists, >= 15 min apart, <= 10 buys and <= $30
+        # cost per market.  `flip` = edge the OTHER side (vs the latest buy) needs
+        # before switching to it; None = never switch.  A flip therefore always
+        # needs the model's agreement, never the market move alone.
+        "rep_hold": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": None},
+        "rep_flip": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.05},
+        "rep_flip10": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.10},
     },
     "live": {
         "base": {"min_edge": 0.05, "slots": {"early"}},
