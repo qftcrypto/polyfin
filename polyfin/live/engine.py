@@ -348,6 +348,7 @@ def main() -> None:
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)   # py-clob-client logs every request
     conn = connect(args.dsn)
     trader = Trader(conn, "live" if args.live else "paper")
     log.info("trader up: launch=%s params=%s", trader.launch_mode, trader.params)
