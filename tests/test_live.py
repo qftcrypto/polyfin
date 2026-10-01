@@ -61,6 +61,11 @@ class TestSlots(unittest.TestCase):
                 "slots": {"early": {"orders_today": early[0], "open_usd": early[1]},
                           "late": {"orders_today": late[0], "open_usd": late[1]}}}
 
+    def test_live_is_early_only(self):
+        from polyfin.live import config as C
+        self.assertEqual(C.MODE_SLOTS["live"], {"early"})
+        self.assertEqual(C.MODE_SLOTS["paper"], {"early", "late"})
+
     def test_slot_boundary(self):
         from polyfin.live.engine import slot_for
         self.assertEqual(slot_for(3 * 3600), "late")

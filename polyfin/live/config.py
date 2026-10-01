@@ -17,6 +17,10 @@ NOFILL_COOLDOWN_S = 600      # after a miss, wait before trying the same market 
 # accurate (favourites at 0.70-0.85, high win rate).  Separate slots so the early
 # entry no longer blocks the late one, and the report can judge each on its own.
 LATE_WINDOW_H = 3.0
+# Slots each mode may enter.  Live starts early-only (2026-09-30): the late-slot
+# sharpening refit swung 1.5 -> 0.75 on one day of data, so paper measures the
+# late slot until it settles.
+MODE_SLOTS = {"paper": {"early", "late"}, "live": {"early"}}
 
 # -- market scope ---------------------------------------------------------------
 MIN_SERIES_VOLUME = 500      # median USD volume of the series' last week of markets
@@ -34,7 +38,8 @@ MAX_OPEN_USD = 100.0         # cost of unsettled positions, both slots together
 MAX_ORDERS_PER_DAY_SLOT = {"early": 20, "late": 20}   # possibly-filled entries per ET day
 MAX_OPEN_USD_SLOT = {"early": 60.0, "late": 40.0}
 MAX_DAILY_LOSS_USD = 30.0    # realized loss per ET day; hit -> no new entries today
-STOP_AFTER_FILLS_LIVE = 20   # live only: pause after this many fills, for review
+STOP_AFTER_FILLS_LIVE = None # live only: pause after this many fills (None = off,
+                             # user decision 2026-09-30: pause on request instead)
 
 # -- data freshness ---------------------------------------------------------------
 MAX_BARS_AGE_S = 15 * 60     # newest bar of any symbol; older = recorder down

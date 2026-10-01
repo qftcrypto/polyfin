@@ -128,7 +128,8 @@ def blocked(risk: dict, mode: str, cost: float, slot: str) -> str | None:
         return "max open exposure"
     if risk["pnl_today"] <= -C.MAX_DAILY_LOSS_USD:
         return "daily loss limit"
-    if mode == "live" and risk["fills_total"] >= C.STOP_AFTER_FILLS_LIVE:
+    if (mode == "live" and C.STOP_AFTER_FILLS_LIVE is not None
+            and risk["fills_total"] >= C.STOP_AFTER_FILLS_LIVE):
         return "stop-after-fills gate"
     return None
 
@@ -258,6 +259,8 @@ class Trader:
                 continue
             edge, side, tok, ps, bk = best
             slot = slot_for(s.target_ts - now)
+            if slot not in C.MODE_SLOTS[mode]:
+                continue
             if has_position_or_cooldown(conn, mode, s.condition_id, slot, now):
                 continue
             lim = limit_price(ps)

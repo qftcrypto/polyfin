@@ -40,8 +40,8 @@ deploy/bootstrap.sh
    ```
 6. **Watch** - `journalctl -fu polyfin-live`, and
    `.venv/bin/python -m polyfin.live.report --mode live` next to `--mode paper`.
-   After 20 fills the trader pauses itself (`STOP_AFTER_FILLS_LIVE`); review,
-   then `control live` again - raise the gate in `polyfin/live/config.py` first.
+   Live trades the early slot only (`MODE_SLOTS`); paper keeps both slots. The
+   stop-after-fills gate is off (`STOP_AFTER_FILLS_LIVE = None`) - pause on request.
 
 Stop at any time: `.venv/bin/python -m polyfin.live.control pause "why"` (stops
 new entries within 30s; reconciliation and redemption keep running).

@@ -110,7 +110,8 @@ fetches fresh books for both tokens, and buys the side with the larger edge when
 whole shares, ~$3 (at least the venue's 5 shares, never over $5). One position per market.
 
 Limits (counted from the database, `polyfin/live/config.py`): 30 orders/day, $100 open,
-$30 daily realized loss, live pauses itself after 20 fills. Entries stop if bars go stale.
+$30 daily realized loss. Live trades the early slot only; paper trades both. Entries stop
+if bars go stale.
 
 ```sh
 .venv/bin/python -m polyfin.live.engine           # paper (default); --once for one cycle
