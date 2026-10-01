@@ -36,6 +36,10 @@ Approvals (both verified on chain 2026-09-30, already set from earlier use of th
 pUSD `approve` -> CTF Exchange V2 `0xE111180000d2663C0091e4f400237545B87B996B`, and CTF
 `setApprovalForAll` -> AutoRedeemOperator `0xf3cfb6a6ebfeb51876289eb235719eb1c65252b0`.
 
+Funded 2026-09-30: 300 pUSD EOA -> proxy, tx
+`0xcd6f2536024cc2305490b00e53e677f3ca57606c71c0c1f9494f1da97b2f015a` (block 94738436, gas
+61,160); proxy 0 -> 300, EOA 300 -> 0. Preflight: all checks passed.
+
 Move money with `scripts/move_funds.py --direction eoa-to-proxy|proxy-to-eoa --amount N`
 (dry run unless `--send`).
 
