@@ -1,0 +1,16 @@
+[Unit]
+Description=polyfin weekly recorder (touch markets: markets, 1m history, books)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=deploy
+WorkingDirectory=/opt/polyfin
+ExecStart=/opt/polyfin/.venv/bin/python -m polyfin.weekly.recorder
+Restart=always
+RestartSec=15
+MemoryMax=512M
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

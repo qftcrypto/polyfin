@@ -17,7 +17,7 @@ sudo cp deploy/polyfin-*.service deploy/polyfin-*.timer /etc/systemd/system/
 sudo sed -i "s#/opt/polyfin#$(pwd)#g; s#^User=deploy#User=$(id -un)#" \
   /etc/systemd/system/polyfin-*.service
 sudo systemctl daemon-reload
-for u in polyfin-recorder polyfin-paper polyfin-live; do
+for u in polyfin-recorder polyfin-weekly polyfin-paper polyfin-live; do
   if systemctl is-active --quiet "$u"; then sudo systemctl restart "$u"; echo "restarted $u"; fi
 done
 git log --oneline -1

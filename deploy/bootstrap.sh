@@ -36,7 +36,7 @@ sudo cp deploy/polyfin-*.service deploy/polyfin-*.timer /etc/systemd/system/
 sudo sed -i "s#/opt/polyfin#$APP#g; s#^User=deploy#User=$(id -un)#" \
   /etc/systemd/system/polyfin-*.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now polyfin-recorder polyfin-paper polyfin-refit.timer
+sudo systemctl enable --now polyfin-recorder polyfin-weekly polyfin-paper polyfin-refit.timer
 
 echo
 echo "running: recorder, paper trader, daily refit.  The recorder backfills 7 days"

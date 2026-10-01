@@ -101,7 +101,9 @@ def connect(dsn: str | None = None, migrate: bool = True) -> DB:
     if migrate:
         db.execute(SCHEMA)
         from .live.schema import TRADE_SCHEMA   # trading tables share the database
+        from .weekly.schema import WEEKLY_SCHEMA
         db.execute(TRADE_SCHEMA)
+        db.execute(WEEKLY_SCHEMA)
         db.commit()
     return db
 

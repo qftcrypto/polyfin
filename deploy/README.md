@@ -7,6 +7,7 @@ stage 2 refit. Logs go to journald.
 | unit | what | enabled by bootstrap |
 |---|---|---|
 | `polyfin-recorder` | markets, 1m bars, price history, books | yes |
+| `polyfin-weekly` | weekly touch markets: markets, 1m price history, books (`polyfin/weekly/`) | yes |
 | `polyfin-paper` | paper trader - keeps running beside live as its twin | yes |
 | `polyfin-refit.timer` | refits `data/stage2_params.json` 07:30 UTC; traders reload it | yes |
 | `polyfin-live` | trader with live authority | **no** |
