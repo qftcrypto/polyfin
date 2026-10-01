@@ -66,9 +66,14 @@ ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS slot TEXT;
 UPDATE trade.orders SET slot = CASE WHEN tau_h <= 3 THEN 'late' ELSE 'early' END
     WHERE slot IS NULL;
 
--- at most one live-or-possibly-live position per market, mode and slot
+-- rule variant (polyfin/live/config.py ARMS); rows before arms existed are 'base'
+ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS arm TEXT;
+UPDATE trade.orders SET arm = 'base' WHERE arm IS NULL;
+
+-- at most one live-or-possibly-live position per market, mode, arm and slot
 DROP INDEX IF EXISTS trade.orders_one_position;
-CREATE UNIQUE INDEX IF NOT EXISTS orders_one_position_slot
-    ON trade.orders (mode, condition_id, slot)
+DROP INDEX IF EXISTS trade.orders_one_position_slot;
+CREATE UNIQUE INDEX IF NOT EXISTS orders_one_position_arm
+    ON trade.orders (mode, arm, condition_id, slot)
     WHERE status IN ('pending', 'filled', 'partial', 'unknown');
 """

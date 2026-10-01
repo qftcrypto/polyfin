@@ -3,7 +3,7 @@
 LOOP_EVERY = 30              # seconds between decision cycles
 
 # -- entry rule ----------------------------------------------------------------
-MIN_EDGE = 0.05              # model_p - ask - fee per share, to enter
+MIN_EDGE = 0.05              # default entry edge (model_p - ask - fee); arms override
 MIN_PRICE, MAX_PRICE = 0.05, 0.97   # never buy lottery tickets or pennies-for-dollars
 MIN_TAU_S = 120              # no entries in the last 2 minutes (1m bars lag)
 MAX_TAU_H = 36               # the backtest scored the last 36h only
@@ -17,10 +17,22 @@ NOFILL_COOLDOWN_S = 600      # after a miss, wait before trying the same market 
 # accurate (favourites at 0.70-0.85, high win rate).  Separate slots so the early
 # entry no longer blocks the late one, and the report can judge each on its own.
 LATE_WINDOW_H = 3.0
-# Slots each mode may enter.  Live starts early-only (2026-09-30): the late-slot
-# sharpening refit swung 1.5 -> 0.75 on one day of data, so paper measures the
-# late slot until it settles.
-MODE_SLOTS = {"paper": {"early", "late"}, "live": {"early"}}
+# Arms: rule variants traded side by side on the same model prices and books.
+# Each arm has its own positions and risk limits.  `base` is the reference rule;
+# live trades only `base`, early slot (2026-09-30: the late-slot sharpening refit
+# swung 1.5 -> 0.75 on one day, and late favourites lost money on real books).
+# The e10/e15 paper arms test a higher entry threshold (research/zones.py: on
+# real book prices edge 0.05-0.10 broke even, 0.10+ was positive - 2 days only).
+ARMS = {
+    "paper": {
+        "base": {"min_edge": 0.05, "slots": {"early", "late"}},
+        "e10": {"min_edge": 0.10, "slots": {"early"}},
+        "e15": {"min_edge": 0.15, "slots": {"early"}},
+    },
+    "live": {
+        "base": {"min_edge": 0.05, "slots": {"early"}},
+    },
+}
 
 # -- market scope ---------------------------------------------------------------
 MIN_SERIES_VOLUME = 500      # median USD volume of the series' last week of markets

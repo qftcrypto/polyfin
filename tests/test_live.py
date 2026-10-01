@@ -61,10 +61,17 @@ class TestSlots(unittest.TestCase):
                 "slots": {"early": {"orders_today": early[0], "open_usd": early[1]},
                           "late": {"orders_today": late[0], "open_usd": late[1]}}}
 
-    def test_live_is_early_only(self):
+    def test_live_is_base_early_only(self):
         from polyfin.live import config as C
-        self.assertEqual(C.MODE_SLOTS["live"], {"early"})
-        self.assertEqual(C.MODE_SLOTS["paper"], {"early", "late"})
+        self.assertEqual(C.ARMS["live"], {"base": {"min_edge": 0.05, "slots": {"early"}}})
+        self.assertEqual(C.ARMS["paper"]["base"]["slots"], {"early", "late"})
+        self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
+                         {"base": 0.05, "e10": 0.10, "e15": 0.15})
+
+    def test_higher_arm_limit_is_lower(self):
+        # the limit keeps the arm's own edge, so e15 pays at most p - 0.15 - fee
+        self.assertEqual(limit_price(0.60, 0.05), 0.54)
+        self.assertEqual(limit_price(0.60, 0.15), 0.44)
 
     def test_slot_boundary(self):
         from polyfin.live.engine import slot_for

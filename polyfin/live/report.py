@@ -17,13 +17,15 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="paper")
     ap.add_argument("--days", type=float, default=7)
+    ap.add_argument("--arm", default=None, help="one arm only (default: all, split by arm)")
     args = ap.parse_args()
     conn = connect()
     rows = conn.execute(
         "SELECT created_at, series_slug, kind, side, tau_h, model_p, best_ask, edge, "
-        "shares_req, status, shares_filled, avg_price, fee, outcome, pnl, slot "
-        "FROM trade.orders WHERE mode=%s AND created_at >= %s ORDER BY created_at",
-        (args.mode, time.time() - args.days * 86400)).fetchall()
+        "shares_req, status, shares_filled, avg_price, fee, outcome, pnl, slot, arm "
+        "FROM trade.orders WHERE mode=%s AND created_at >= %s AND (%s IS NULL OR arm = %s) "
+        "ORDER BY created_at",
+        (args.mode, time.time() - args.days * 86400, args.arm, args.arm)).fetchall()
     if not rows:
         print(f"no {args.mode} orders in the last {args.days:g} days")
         return
@@ -45,7 +47,12 @@ def main() -> None:
     print(f"   {'':30} {'tried':>5} {'filled':>6} {'full%':>6} {'edge':>6} {'cost $':>8} "
           f"{'settled':>7} {'win%':>6} {'pnl $':>8}")
     summary("all", rows)
-    for key, idx in (("slot", 15), ("kind", 2), ("side", 3)):
+    g = defaultdict(list)
+    for r in rows:
+        g[(r[16], r[15])].append(r)
+    for (arm, slot), v in sorted(g.items()):
+        summary(f"arm={arm} slot={slot}", v)
+    for key, idx in (("arm", 16), ("slot", 15), ("kind", 2), ("side", 3)):
         g = defaultdict(list)
         for r in rows:
             g[r[idx]].append(r)
