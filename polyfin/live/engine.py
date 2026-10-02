@@ -183,6 +183,7 @@ class Trader:
             self.executors["live"] = self.clob
             self._init_chain()
         self.betas: dict = {}
+        self.seen: dict = {}            # confirm arms: (arm, cid, side, leg) -> first seen ts
         self.params_mtime = None
         self.params = self._params()
 
@@ -285,6 +286,7 @@ class Trader:
         risk = risk_state(conn, mode, now, arm)
         entered = 0
         rungs = cfg.get("rungs", [cfg["min_edge"]])
+        confirmed_now: set = set()
         for s, p, f in priced:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
@@ -323,6 +325,17 @@ class Trader:
                             s.series_slug, best[1], best[0], C.MAX_EDGE)
                 continue
             edge, side, tok, ps, bk = best
+            if cfg.get("confirm_s"):
+                key = (arm, s.condition_id, side, leg)
+                confirmed_now.add(key)
+                first = self.seen.setdefault(key, now)
+                if now - first < cfg["confirm_s"]:
+                    continue                            # wait for the signal to hold
+            if mode == "live":
+                fresh = self._refresh(tok, ps, need, s, side, arm)
+                if fresh is None:
+                    continue
+                bk, edge = fresh
             lim = exec_limit(ps, need, bk["asks"][0][0])
             shares = shares_for(lim) if lim else None
             if not shares:
@@ -351,6 +364,9 @@ class Trader:
                 balance -= shares * lim * 1.02
             risk = risk_state(conn, mode, time.time(), arm)
             entered += 1
+        if cfg.get("confirm_s"):                        # a signal that lapsed starts over
+            for k in [k for k in self.seen if k[0] == arm and k not in confirmed_now]:
+                del self.seen[k]
         sl = risk["slots"]
         log.info("%s/%s: %d markets priced, %d entries | today %d orders (early %d, late %d), "
                  "open $%.2f (early $%.2f, late $%.2f), pnl $%+.2f", mode, arm, len(priced),
@@ -404,6 +420,11 @@ class Trader:
                             s.series_slug, best[1], best[0], C.MAX_EDGE)
                 continue
             edge, side, tok, ps, bk, need = best
+            if mode == "live":
+                fresh = self._refresh(tok, ps, need, s, side, arm)
+                if fresh is None:
+                    continue
+                bk, edge = fresh
             lim = exec_limit(ps, need, bk["asks"][0][0])
             shares = shares_for(lim) if lim else None
             if not shares:
@@ -420,6 +441,25 @@ class Trader:
                  mode, arm, len(priced), entered, risk["orders_today"], risk["open_usd"],
                  risk["pnl_today"])
         return balance
+
+    def _refresh(self, tok, ps, need, s, side, arm):
+        """Live: re-read this token's book just before sending (the cycle's batch is
+        seconds old by the time later orders go out - research/race.py) and re-check
+        the edge on it.  (book, edge) or None to skip."""
+        try:
+            bk = fetch_books([tok]).get(tok)
+        except Exception as e:
+            log.warning("[%s] refresh %s failed: %s", arm, s.series_slug, str(e)[:100])
+            return None
+        if not bk or not bk["asks"]:
+            return None
+        ask = bk["asks"][0][0]
+        edge = ps - ask - fee_per_share(ask)
+        if not (C.MIN_PRICE <= ask <= C.MAX_PRICE) or edge < need or edge > C.MAX_EDGE:
+            log.info("[%s] refresh %s %s: ask now %.3f, edge %.3f - skip", arm, s.series_slug,
+                     side, ask, edge)
+            return None
+        return bk, edge
 
     def _enter(self, mode, arm, s, side, tok, ps, edge, lim, shares, bk, f, now, slot,
                leg=1) -> None:

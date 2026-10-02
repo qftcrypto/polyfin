@@ -46,6 +46,11 @@ ARMS = {
         "rep_hold": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": None},
         "rep_flip": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.05},
         "rep_flip10": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.10},
+        # live ladder2 + confirmation: a signal must still hold >= confirm_s after first seen,
+        # on a later cycle with fresher bars (recorder fetches every 120s).  research/race.py:
+        # the bought side fell ~1.6-2.4c in the minute after entry (stale inputs).
+        "confirm": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
+                    "confirm_s": 120},
     },
     "live": {
         # 2026-10-02: base -> two-buy ladder (research/ladder.py, 8 days; the second

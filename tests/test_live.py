@@ -73,7 +73,8 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(C.ARMS["paper"]["base"]["slots"], {"early", "late"})
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
                          {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05,
-                          "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05})
+                          "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05,
+                          "confirm": 0.05})
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
                                                                   "rep_flip10")},
                          {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})
@@ -222,6 +223,45 @@ class TestControlAliases(unittest.TestCase):
         from polyfin.live.control import ALIASES, RANK
         self.assertEqual(ALIASES["pause"], "paused")       # what the docs tell people to type
         self.assertTrue(all(v in RANK for v in ALIASES.values()))
+
+
+
+class TestConfirmAndRefreshDB(TestLadderDB):
+    def run_at(self, arm, cfg, p, yes_ask, no_ask, at, mode="paper"):
+        books = {"tokY": {"bids": [], "asks": [(yes_ask, 1000.0)], "ts": 0},
+                 "tokN": {"bids": [], "asks": [(no_ask, 1000.0)], "ts": 0}}
+        self.trader._run_arm(mode, arm, cfg, [(self.spec, p, (0, 0, 1e-4, 1))],
+                             {self.cid: "tokN"}, books, at, 1e9 if mode == "live" else None)
+        return self.conn.execute("SELECT side, best_ask FROM trade.orders WHERE condition_id=%s "
+                                 "AND arm=%s ORDER BY id", (self.cid, arm)).fetchall()
+
+    def test_confirm_waits_and_resets(self):
+        cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10], "confirm_s": 120}
+        t = self.now
+        self.assertEqual(self.run_at("confirm", cfg, 0.50, 0.44, 0.60, t), [])
+        self.assertEqual(self.run_at("confirm", cfg, 0.50, 0.44, 0.60, t + 60), [])
+        self.assertEqual(self.run_at("confirm", cfg, 0.50, 0.50, 0.60, t + 90), [])   # lapsed
+        self.assertEqual(self.run_at("confirm", cfg, 0.50, 0.44, 0.60, t + 121), [])  # restarted
+        self.assertEqual(len(self.run_at("confirm", cfg, 0.50, 0.44, 0.60, t + 242)), 1)
+
+    def test_live_refresh_rechecks_the_edge(self):
+        from polyfin.live import engine
+        from polyfin.live.executor import PaperExecutor
+        self.trader.executors["live"] = PaperExecutor()
+        cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10]}
+        orig = engine.fetch_books
+        try:
+            engine.fetch_books = lambda toks: {t: {"bids": [], "asks": [(0.49, 100.0)], "ts": 0}
+                                               for t in toks}          # edge gone by send time
+            self.assertEqual(self.run_at("t_live", cfg, 0.50, 0.44, 0.60, self.now, "live"), [])
+            engine.fetch_books = lambda toks: {t: {"bids": [], "asks": [(0.43, 100.0)], "ts": 0}
+                                               for t in toks}          # still there, cheaper
+            rows = self.run_at("t_live", cfg, 0.50, 0.44, 0.60, self.now, "live")
+            self.assertEqual([(r[0], round(r[1], 2)) for r in rows], [("yes", 0.43)])
+        finally:
+            engine.fetch_books = orig
+            self.conn.execute("DELETE FROM trade.orders WHERE condition_id=%s", (self.cid,))
+            self.conn.commit()
 
 
 if __name__ == "__main__":
