@@ -71,7 +71,7 @@ MAX_SLIP = 0.01              # never pay more than best ask + 1c (user rule, 202
 LIMITS = {
     # The wallet balance is the budget limit (checked before every live order).
     # No exposure or order-count caps (user, 2026-10-02: redundant with the balance).
-    "live": {"daily_loss": 100.0},     # realized loss per ET day -> no new entries (user-set)
+    "live": {},                        # daily loss stop removed too (user, 2026-10-02)
     "paper": None,
 }
 STOP_AFTER_FILLS_LIVE = None # live only: pause after this many fills (None = off,

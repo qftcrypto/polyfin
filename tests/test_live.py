@@ -69,7 +69,7 @@ class TestSlots(unittest.TestCase):
         from polyfin.live import config as C
         self.assertEqual(C.ARMS["live"], {"ladder2": {"min_edge": 0.05, "slots": {"early"},
                                                       "rungs": [0.05, 0.10]}})
-        self.assertEqual(C.LIMITS["live"]["daily_loss"], 100.0)
+        self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(C.ARMS["paper"]["base"]["slots"], {"early", "late"})
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
                          {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05,
@@ -83,7 +83,7 @@ class TestSlots(unittest.TestCase):
         from polyfin.live.engine import blocked
         r = self.risk(early=(500, 5000.0), pnl=-999.0)
         self.assertIsNone(blocked(r, "paper", 3.0, "early"))
-        self.assertEqual(blocked(r, "live", 3.0, "early"), "daily loss limit")
+        self.assertIsNone(blocked(r, "live", 3.0, "early"))
 
     def test_higher_arm_limit_is_lower(self):
         # the limit keeps the arm's own edge, so e15 pays at most p - 0.15 - fee
@@ -95,19 +95,16 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(slot_for(3 * 3600), "late")
         self.assertEqual(slot_for(3 * 3600 + 1), "early")
 
-    def test_live_has_only_the_daily_loss_stop(self):
+    def test_live_has_no_budget_limits(self):
         from polyfin.live.engine import blocked
-        # no exposure or order-count caps: the wallet balance is the budget limit
-        self.assertIsNone(blocked(self.risk(early=(500, 5000.0), late=(500, 5000.0)), "live",
-                                  3.0, "early"))
-        self.assertIsNone(blocked(self.risk(pnl=-99.0), "live", 3.0, "early"))
-        self.assertEqual(blocked(self.risk(pnl=-100.0), "live", 3.0, "early"), "daily loss limit")
-
+        # the wallet balance (checked per order in the engine) is the only budget limit
+        self.assertIsNone(blocked(self.risk(early=(500, 5000.0), late=(500, 5000.0), pnl=-999.0),
+                                  "live", 3.0, "early"))
     def test_paper_has_no_caps_live_does(self):
         from polyfin.live.engine import blocked
         r = self.risk(early=(500, 5000.0), pnl=-999.0)
         self.assertIsNone(blocked(r, "paper", 3.0, "early"))
-        self.assertEqual(blocked(r, "live", 3.0, "early"), "daily loss limit")
+        self.assertIsNone(blocked(r, "live", 3.0, "early"))
 
     def test_higher_arm_limit_is_lower(self):
         # the limit keeps the arm's own edge, so e15 pays at most p - 0.15 - fee

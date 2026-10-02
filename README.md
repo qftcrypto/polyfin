@@ -109,8 +109,7 @@ fetches fresh books for both tokens, and buys the side with the larger edge when
 `model_p − ask − fee ≥ 0.05` - a FAK at the highest whole-cent price that keeps that edge,
 whole shares, ~$3 (at least the venue's 5 shares, never over $5). One position per market.
 
-Limits: the wallet balance (checked before every live order) and a $100 daily realized
-loss stop. Live trades the early slot only, as a two-buy ladder (edge 0.05,
+Limits: the wallet balance, checked before every live order. No other budget limits. Live trades the early slot only, as a two-buy ladder (edge 0.05,
 then add at 0.10 on the same side); paper trades both slots and several rule arms. Entries stop
 if bars go stale.
 
