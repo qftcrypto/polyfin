@@ -45,7 +45,9 @@ ARMS = {
         "rep_flip10": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.10},
     },
     "live": {
-        "base": {"min_edge": 0.05, "slots": {"early"}},
+        # 2026-10-02: base -> two-buy ladder (research/ladder.py, 8 days; the second
+        # buy paid at least as well as the first on every price source)
+        "ladder2": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10]},
     },
 }
 
@@ -69,7 +71,7 @@ LIMITS = {
         # per slot, so early entries cannot use up the budget before the late window
         "orders_per_day_slot": {"early": 20, "late": 20},  # possibly-filled, per ET day
         "open_usd_slot": {"early": 60.0, "late": 40.0},
-        "daily_loss": 30.0,                              # realized, per ET day
+        "daily_loss": 100.0,                             # realized, per ET day (was 30)
     },
     "paper": None,
 }

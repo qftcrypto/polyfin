@@ -90,7 +90,9 @@ def slot_for(tau_s: float) -> str:
 
 
 def risk_state(conn, mode: str, now: float, arm: str = "base") -> dict:
-    """One arm's totals, plus orders_today / open_usd per slot under "slots"."""
+    """Totals plus orders_today / open_usd per slot under "slots": per arm for paper
+    (each arm is its own experiment), across ALL arms for live - the caps protect one
+    wallet, whatever the arm is called."""
     day = et_day_start(now)
     rows = conn.execute(
         "SELECT slot,"
@@ -102,7 +104,8 @@ def risk_state(conn, mode: str, now: float, arm: str = "base") -> dict:
         "   ('pending', 'unknown')), 0),"
         " COALESCE(SUM(pnl) FILTER (WHERE settled_at >= %(day)s), 0),"
         " COUNT(*) FILTER (WHERE shares_filled > 0)"
-        " FROM trade.orders WHERE mode = %(mode)s AND arm = %(arm)s GROUP BY slot",
+        " FROM trade.orders WHERE mode = %(mode)s AND (%(mode)s = 'live' OR arm = %(arm)s) "
+        "GROUP BY slot",
         {"day": day, "mode": mode, "arm": arm}).fetchall()
     conn.commit()
     slots = {s: {"orders_today": 0, "open_usd": 0.0} for s in ("early", "late")}

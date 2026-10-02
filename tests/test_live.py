@@ -70,7 +70,9 @@ class TestSlots(unittest.TestCase):
 
     def test_live_is_base_early_only(self):
         from polyfin.live import config as C
-        self.assertEqual(C.ARMS["live"], {"base": {"min_edge": 0.05, "slots": {"early"}}})
+        self.assertEqual(C.ARMS["live"], {"ladder2": {"min_edge": 0.05, "slots": {"early"},
+                                                      "rungs": [0.05, 0.10]}})
+        self.assertEqual(C.LIMITS["live"]["daily_loss"], 100.0)
         self.assertEqual(C.ARMS["paper"]["base"]["slots"], {"early", "late"})
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
                          {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05,
@@ -108,7 +110,8 @@ class TestSlots(unittest.TestCase):
                          "max late open exposure")
         self.assertEqual(blocked(self.risk(early=(1, 59.0), late=(1, 39.0)), "live", 3.0,
                                  "late"), "max late open exposure")
-        self.assertEqual(blocked(self.risk(pnl=-30.0), "live", 3.0, "late"),
+        self.assertIsNone(blocked(self.risk(pnl=-99.0), "live", 3.0, "late"))
+        self.assertEqual(blocked(self.risk(pnl=-100.0), "live", 3.0, "late"),
                          "daily loss limit")
 
 

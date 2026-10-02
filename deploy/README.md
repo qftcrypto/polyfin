@@ -41,7 +41,8 @@ deploy/bootstrap.sh
    ```
 6. **Watch** - `journalctl -fu polyfin-live`, and
    `.venv/bin/python -m polyfin.live.report --mode live` next to `--mode paper`.
-   Live trades the early slot only (`MODE_SLOTS`); paper keeps both slots. The
+   Live trades arm `ladder2` (early slot, buy at edge 0.05, add at 0.10); paper keeps both
+   slots and the research arms. Live caps count all live arms together. The
    stop-after-fills gate is off (`STOP_AFTER_FILLS_LIVE = None`) - pause on request.
 
 Stop at any time: `.venv/bin/python -m polyfin.live.control pause "why"` (stops
