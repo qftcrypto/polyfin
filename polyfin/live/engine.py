@@ -318,6 +318,10 @@ class Trader:
                             best = (ps - ask - fee_per_share(ask), side, tok, ps, bk)
             if best is None or best[0] < need:
                 continue
+            if best[0] > C.MAX_EDGE:
+                log.warning("[%s] skip %s %s: edge %.3f > %.2f cap - suspect data", arm,
+                            s.series_slug, best[1], best[0], C.MAX_EDGE)
+                continue
             edge, side, tok, ps, bk = best
             lim = exec_limit(ps, need, bk["asks"][0][0])
             shares = shares_for(lim) if lim else None
@@ -394,6 +398,10 @@ class Trader:
                 if edge >= need and (best is None or edge > best[0]):
                     best = (edge, side, tok, ps, bk, need)
             if best is None:
+                continue
+            if best[0] > C.MAX_EDGE:
+                log.warning("[%s] skip %s %s: edge %.3f > %.2f cap - suspect data", arm,
+                            s.series_slug, best[1], best[0], C.MAX_EDGE)
                 continue
             edge, side, tok, ps, bk, need = best
             lim = exec_limit(ps, need, bk["asks"][0][0])
