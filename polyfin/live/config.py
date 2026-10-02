@@ -9,6 +9,7 @@ MIN_TAU_S = 120              # no entries in the last 2 minutes (1m bars lag)
 MAX_TAU_H = 36               # the backtest scored the last 36h only
 NEAR_TIE_BP = 3.0            # inside 30 min, skip if |ln S/ref| < 3bp: Pyth may differ
 NEAR_TIE_TAU_S = 1800
+MAX_MOVE_DAILY_SD = 4.0      # skip if |ln S/ref| > 4 x the asset's daily sd: bad data, not a move
 NOFILL_COOLDOWN_S = 600      # after a miss, wait before trying the same market again
 
 # Two entry slots per market, each allowed one position.  "early" entries are the

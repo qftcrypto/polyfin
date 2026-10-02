@@ -56,5 +56,31 @@ class TestParsers(unittest.TestCase):
         self.assertEqual(parse_chart({"chart": {"result": None}}), [])
 
 
+
+class TestBadPrints(unittest.TestCase):
+    def test_despike_isolated_bar(self):
+        from polyfin.data import Bars
+        rows = [(60 * i, 513.0, c) for i, c in enumerate([513.1, 513.4, 480.4, 513.5, 513.6])]
+        b = Bars(rows)
+        self.assertAlmostEqual(b.close[2], (513.4 + 513.5) / 2)
+        self.assertEqual(b.close[1], 513.4)
+
+    def test_real_move_kept(self):
+        from polyfin.data import Bars
+        rows = [(60 * i, 100.0, c) for i, c in enumerate([100, 100, 103, 103.2, 103.1])]
+        self.assertEqual(Bars(rows).close[2], 103)          # neighbours disagree: a move
+
+    def test_latest_price_is_median_of_recent(self):
+        from polyfin.data import Bars
+        rows = [(60 * i, 513.0, c) for i, c in enumerate([513.1, 513.4, 513.5, 480.4])]
+        self.assertEqual(Bars(rows).price_at(60 * 4 + 60), 513.4)   # last print is bad
+
+    def test_partial_minute_bars_dropped(self):
+        p = {"chart": {"result": [{"timestamp": [60, 120, 155],
+             "indicators": {"quote": [{"open": [1, 2, 3], "high": [1, 2, 3], "low": [1, 2, 3],
+                                       "close": [1, 2, 9], "volume": [1, 1, 0]}]}}]}}
+        self.assertEqual([r[0] for r in parse_chart(p)], [60, 120])
+
+
 if __name__ == "__main__":
     unittest.main()

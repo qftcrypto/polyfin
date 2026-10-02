@@ -258,6 +258,12 @@ class Trader:
                 continue
             if s.target_ts - now < C.NEAR_TIE_TAU_S and abs(f[1]) * 1e4 < C.NEAR_TIE_BP:
                 continue
+            day_sd = model.m1._get(s.symbol)[1].daily_vol()
+            if s.kind != "strikes" and day_sd > 0 and abs(f[1]) > C.MAX_MOVE_DAILY_SD * day_sd:
+                log.warning("skip %s: implied move %+.2f%% is > %.0f daily sd (%.2f%%) - "
+                            "bad price data?", s.series_slug, 100 * f[1], C.MAX_MOVE_DAILY_SD,
+                            100 * day_sd)
+                continue
             priced.append((s, p, f))
         tokens = {r[0]: r[1] for r in conn.execute(
             "SELECT condition_id, token_no FROM markets WHERE condition_id = ANY(%s)",

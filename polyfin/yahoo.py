@@ -20,7 +20,9 @@ def parse_chart(payload: dict) -> list[tuple]:
     ts = r.get("timestamp") or []
     q = ((r.get("indicators") or {}).get("quote") or [{}])[0]
     cols = [q.get(k) or [None] * len(ts) for k in ("open", "high", "low", "close", "volume")]
-    return [(t, *row) for t, *row in zip(ts, *cols) if row[3] is not None]
+    # Yahoo stamps the still-forming bar with the request time (e.g. 19:55:37); keep
+    # whole minutes only, or that partial bar is stored as an extra, spiky row
+    return [(t, *row) for t, *row in zip(ts, *cols) if row[3] is not None and t % 60 == 0]
 
 
 def fetch_bars(symbol: str, days: int) -> list[tuple]:
