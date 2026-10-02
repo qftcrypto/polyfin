@@ -9,9 +9,9 @@ MIN_TAU_S = 120              # no entries in the last 2 minutes (1m bars lag)
 MAX_TAU_H = 36               # the backtest scored the last 36h only
 NEAR_TIE_BP = 3.0            # inside 30 min, skip if |ln S/ref| < 3bp: Pyth may differ
 NEAR_TIE_TAU_S = 1800
-MAX_EDGE = 0.25             # skip entries above this edge: so far always bad data, never a
-                            # bargain (2026-10-02: every first entry >= 0.20 followed a bad
-                            # after-hours print; real-book edges >= 0.20 lost money)
+# No edge cap (removed 2026-10-02, user decision): research/model_check.py found gaps >=
+# 0.25 the model's best band once bad prints are cleaned at load (data.despike); the
+# move guard below still catches implausible prices.
 MAX_MOVE_DAILY_SD = 4.0      # skip if |ln S/ref| > 4 x the asset's daily sd: bad data, not a move
 NOFILL_COOLDOWN_S = 600      # after a miss, wait before trying the same market again
 

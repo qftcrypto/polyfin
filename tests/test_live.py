@@ -164,9 +164,9 @@ class TestLadderDB(unittest.TestCase):
         self.assertEqual([l for l, _, _ in legs], [1, 2, 3])
         self.assertEqual(len(self.cycle(0.50, 0.20, 0.60)), 3)                     # no 4th rung
 
-    def test_edge_above_cap_is_skipped(self):
-        self.assertEqual(self.cycle(0.90, 0.53, 0.60), [])        # edge ~0.36: suspect data
-        self.assertEqual(len(self.cycle(0.70, 0.53, 0.60)), 1)    # edge ~0.16: trades
+    def test_wide_edge_trades(self):
+        # no edge cap: a 0.36 edge is traded (bad prints are filtered at load instead)
+        self.assertEqual(len(self.cycle(0.90, 0.53, 0.60)), 1)
 
 
 class TestRepeatDB(TestLadderDB):

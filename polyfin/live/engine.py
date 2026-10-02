@@ -320,10 +320,6 @@ class Trader:
                             best = (ps - ask - fee_per_share(ask), side, tok, ps, bk)
             if best is None or best[0] < need:
                 continue
-            if best[0] > C.MAX_EDGE:
-                log.warning("[%s] skip %s %s: edge %.3f > %.2f cap - suspect data", arm,
-                            s.series_slug, best[1], best[0], C.MAX_EDGE)
-                continue
             edge, side, tok, ps, bk = best
             if cfg.get("confirm_s"):
                 key = (arm, s.condition_id, side, leg)
@@ -415,10 +411,6 @@ class Trader:
                     best = (edge, side, tok, ps, bk, need)
             if best is None:
                 continue
-            if best[0] > C.MAX_EDGE:
-                log.warning("[%s] skip %s %s: edge %.3f > %.2f cap - suspect data", arm,
-                            s.series_slug, best[1], best[0], C.MAX_EDGE)
-                continue
             edge, side, tok, ps, bk, need = best
             if mode == "live":
                 fresh = self._refresh(tok, ps, need, s, side, arm)
@@ -445,7 +437,7 @@ class Trader:
     def _refresh(self, tok, ps, need, s, side, arm):
         """Live: re-read this token's book just before sending (the cycle's batch is
         seconds old by the time later orders go out - research/race.py) and re-check
-        the edge on it.  (book, edge) or None to skip."""
+        the edge and price range on it.  (book, edge) or None to skip."""
         try:
             bk = fetch_books([tok]).get(tok)
         except Exception as e:
@@ -455,7 +447,7 @@ class Trader:
             return None
         ask = bk["asks"][0][0]
         edge = ps - ask - fee_per_share(ask)
-        if not (C.MIN_PRICE <= ask <= C.MAX_PRICE) or edge < need or edge > C.MAX_EDGE:
+        if not (C.MIN_PRICE <= ask <= C.MAX_PRICE) or edge < need:
             log.info("[%s] refresh %s %s: ask now %.3f, edge %.3f - skip", arm, s.series_slug,
                      side, ask, edge)
             return None
