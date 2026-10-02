@@ -69,13 +69,9 @@ MAX_SLIP = 0.01              # never pay more than best ask + 1c (user rule, 202
 # Per mode.  Paper has none (2026-10-01): caps only distort a paper arm's sample,
 # and left paper/base unable to mirror live once its daily cap was hit.
 LIMITS = {
-    "live": {
-        "open_usd": 1000.0,                              # unsettled cost, all slots (user, 2026-10-02)
-        # per slot, so early entries cannot use up the budget before the late window
-        "orders_per_day_slot": {"early": 20, "late": 20},  # possibly-filled, per ET day
-        "open_usd_slot": {"early": 1000.0, "late": 1000.0},  # was 60 / 40 (user, 2026-10-02)
-        "daily_loss": 100.0,                             # realized, per ET day (was 30)
-    },
+    # The wallet balance is the budget limit (checked before every live order).
+    # No exposure or order-count caps (user, 2026-10-02: redundant with the balance).
+    "live": {"daily_loss": 100.0},     # realized loss per ET day -> no new entries (user-set)
     "paper": None,
 }
 STOP_AFTER_FILLS_LIVE = None # live only: pause after this many fills (None = off,

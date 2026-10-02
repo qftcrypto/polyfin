@@ -126,13 +126,13 @@ def blocked(risk: dict, mode: str, cost: float, slot: str) -> str | None:
     if lim is None:                                     # paper: no caps
         return None
     sr = risk["slots"][slot]
-    if sr["orders_today"] >= lim["orders_per_day_slot"][slot]:
+    if "orders_per_day_slot" in lim and sr["orders_today"] >= lim["orders_per_day_slot"][slot]:
         return f"max {slot} orders per day"
-    if sr["open_usd"] + cost > lim["open_usd_slot"][slot]:
+    if "open_usd_slot" in lim and sr["open_usd"] + cost > lim["open_usd_slot"][slot]:
         return f"max {slot} open exposure"
-    if risk["open_usd"] + cost > lim["open_usd"]:
+    if "open_usd" in lim and risk["open_usd"] + cost > lim["open_usd"]:
         return "max open exposure"
-    if risk["pnl_today"] <= -lim["daily_loss"]:
+    if "daily_loss" in lim and risk["pnl_today"] <= -lim["daily_loss"]:
         return "daily loss limit"
     if (mode == "live" and C.STOP_AFTER_FILLS_LIVE is not None
             and risk["fills_total"] >= C.STOP_AFTER_FILLS_LIVE):
