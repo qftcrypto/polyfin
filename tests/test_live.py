@@ -57,9 +57,6 @@ class TestControl(unittest.TestCase):
         self.assertEqual(min("live", "paused", key=RANK.__getitem__), "paused")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestSlots(unittest.TestCase):
     def risk(self, early=(0, 0.0), late=(0, 0.0), pnl=0.0):
@@ -210,3 +207,14 @@ class TestRepeatDB(TestLadderDB):
         for k in range(14):                              # $30 cap: 5 shares x 0.80 = $4+ each
             sides = self.run_arm("rep_hold", 0.95, 0.80, 0.25, t + k * 901)
         self.assertEqual(len(sides), 7)                  # 7 x ~$4.03 = $28.2; an 8th > $30
+
+
+class TestControlAliases(unittest.TestCase):
+    def test_pause_alias(self):
+        from polyfin.live.control import ALIASES, RANK
+        self.assertEqual(ALIASES["pause"], "paused")       # what the docs tell people to type
+        self.assertTrue(all(v in RANK for v in ALIASES.values()))
+
+
+if __name__ == "__main__":
+    unittest.main()

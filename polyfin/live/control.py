@@ -25,7 +25,11 @@ def read(conn) -> tuple[str, str | None]:
     return (row[0], row[1]) if row else ("paused", "control row missing")
 
 
+ALIASES = {"pause": "paused", "stop": "paused", "resume": "paper"}
+
+
 def set_mode(conn, mode: str, reason: str) -> None:
+    mode = ALIASES.get(mode, mode)
     if mode not in RANK:
         raise ValueError(f"mode must be one of {list(RANK)}")
     conn.execute("UPDATE trade.control SET mode=%s, reason=%s, updated_at=%s WHERE id=1",
