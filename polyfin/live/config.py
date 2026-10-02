@@ -70,10 +70,10 @@ MAX_SLIP = 0.01              # never pay more than best ask + 1c (user rule, 202
 # and left paper/base unable to mirror live once its daily cap was hit.
 LIMITS = {
     "live": {
-        "open_usd": 300.0,                               # unsettled cost, all slots (was 100)
+        "open_usd": 1000.0,                              # unsettled cost, all slots (user, 2026-10-02)
         # per slot, so early entries cannot use up the budget before the late window
         "orders_per_day_slot": {"early": 20, "late": 20},  # possibly-filled, per ET day
-        "open_usd_slot": {"early": 300.0, "late": 300.0},  # was 60 / 40 (user, 2026-10-02)
+        "open_usd_slot": {"early": 1000.0, "late": 1000.0},  # was 60 / 40 (user, 2026-10-02)
         "daily_loss": 100.0,                             # realized, per ET day (was 30)
     },
     "paper": None,

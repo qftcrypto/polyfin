@@ -97,16 +97,16 @@ class TestSlots(unittest.TestCase):
 
     def test_full_early_budget_does_not_block_late(self):
         from polyfin.live.engine import blocked
-        r = self.risk(early=(20, 290.0))
+        r = self.risk(early=(20, 990.0))
         self.assertEqual(blocked(r, "live", 3.0, "early"), "max early orders per day")
         self.assertIsNone(blocked(r, "live", 3.0, "late"))
 
     def test_slot_and_total_exposure_caps(self):
         from polyfin.live.engine import blocked
-        self.assertEqual(blocked(self.risk(late=(1, 298.0)), "live", 3.0, "late"),
+        self.assertEqual(blocked(self.risk(late=(1, 998.0)), "live", 3.0, "late"),
                          "max late open exposure")
-        self.assertEqual(blocked(self.risk(early=(1, 200.0), late=(1, 98.5)), "live", 3.0,
-                                 "late"), "max open exposure")         # total $300 binds
+        self.assertEqual(blocked(self.risk(early=(1, 600.0), late=(1, 398.5)), "live", 3.0,
+                                 "late"), "max open exposure")         # total $1,000 binds
         self.assertIsNone(blocked(self.risk(pnl=-99.0), "live", 3.0, "late"))
         self.assertEqual(blocked(self.risk(pnl=-100.0), "live", 3.0, "late"),
                          "daily loss limit")
