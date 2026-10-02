@@ -99,11 +99,16 @@ class DB:
 def connect(dsn: str | None = None, migrate: bool = True) -> DB:
     db = DB(dsn)
     if migrate:
+        # services start together on deploy; their schema DDL (index drops) deadlocked
+        # once (2026-10-02 14:21, live restarted by systemd).  One migrator at a time.
+        db.execute("SELECT pg_advisory_lock(7461001)")
         db.execute(SCHEMA)
         from .live.schema import TRADE_SCHEMA   # trading tables share the database
         from .weekly.schema import WEEKLY_SCHEMA
         db.execute(TRADE_SCHEMA)
         db.execute(WEEKLY_SCHEMA)
+        db.commit()
+        db.execute("SELECT pg_advisory_unlock(7461001)")
         db.commit()
     return db
 
