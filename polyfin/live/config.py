@@ -51,6 +51,13 @@ ARMS = {
         # the bought side fell ~1.6-2.4c in the minute after entry (stale inputs).
         "confirm": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                     "confirm_s": 120},
+        # Late-slot variants (2026-10-02).  Late, the model is worse than the market 1-3h
+        # out and overconfident (disagreements: model 0.641, market 0.501, realized 0.532)
+        # but better in the last hour.  Compared with base's late slot.
+        "late_1h": {"min_edge": 0.05, "slots": {"late"}, "max_tau_h": 1.0},
+        # logit P = w_model logit(model) + w_market logit(market mid): weights fitted on
+        # late points of 9 days (best late Brier 0.0752 vs model 0.0787 / market 0.0763)
+        "late_blend": {"min_edge": 0.05, "slots": {"late"}, "blend": (0.19, 0.92)},
     },
     "live": {
         # 2026-10-02: base -> two-buy ladder (research/ladder.py, 8 days; the second

@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import time
 from datetime import datetime
 
@@ -83,6 +84,15 @@ def settle(conn) -> int:
                      (pay, sh * (pay - avg) - fee, now, oid))
     conn.commit()
     return len(rows)
+
+
+def blend_with_market(p: float, yes_book, w) -> float | None:
+    """logit P = w[0] logit(p) + w[1] logit(Yes mid); None without a two-sided book."""
+    if not yes_book or not yes_book["bids"] or not yes_book["asks"]:
+        return None
+    mid = (yes_book["bids"][0][0] + yes_book["asks"][0][0]) / 2
+    lg = lambda q: math.log(min(max(q, 1e-3), 1 - 1e-3) / (1 - min(max(q, 1e-3), 1 - 1e-3)))
+    return 1 / (1 + math.exp(-(w[0] * lg(p) + w[1] * lg(mid))))
 
 
 def slot_for(tau_s: float) -> str:
@@ -291,6 +301,12 @@ class Trader:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
                 continue
+            if "max_tau_h" in cfg and s.target_ts - now > cfg["max_tau_h"] * 3600:
+                continue
+            if "blend" in cfg:
+                p = blend_with_market(p, books.get(s.token_yes), cfg["blend"])
+                if p is None:
+                    continue
             sides = [("yes", s.token_yes, p), ("no", tokens[s.condition_id], 1 - p)]
             best = None
             for side, tok, ps in sides:

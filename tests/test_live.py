@@ -74,7 +74,7 @@ class TestSlots(unittest.TestCase):
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
                          {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05,
                           "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05,
-                          "confirm": 0.05})
+                          "confirm": 0.05, "late_1h": 0.05, "late_blend": 0.05})
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
                                                                   "rep_flip10")},
                          {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})
@@ -262,6 +262,37 @@ class TestConfirmAndRefreshDB(TestLadderDB):
             engine.fetch_books = orig
             self.conn.execute("DELETE FROM trade.orders WHERE condition_id=%s", (self.cid,))
             self.conn.commit()
+
+
+
+class TestLateArmsDB(TestLadderDB):
+    def run_late(self, arm, p, yes_bid, yes_ask, no_ask, tau_h):
+        from polyfin.live import config as C
+        from polyfin.stage1 import Spec
+        spec = Spec(self.cid, "test-series", "updown", "TEST", "tokY", int(self.now + tau_h * 3600),
+                    int(self.now - 3600), None, None, int(self.now + tau_h * 3600))
+        books = {"tokY": {"bids": [(yes_bid, 100.0)], "asks": [(yes_ask, 1000.0)], "ts": 0},
+                 "tokN": {"bids": [], "asks": [(no_ask, 1000.0)], "ts": 0}}
+        self.trader._run_arm("paper", arm, C.ARMS["paper"][arm], [(spec, p, (0, 0, 1e-4, 1))],
+                             {self.cid: "tokN"}, books, self.now, None)
+        return self.conn.execute("SELECT side FROM trade.orders WHERE condition_id=%s AND arm=%s",
+                                 (self.cid, arm)).fetchall()
+
+    def test_late_1h_only_in_the_last_hour(self):
+        self.assertEqual(self.run_late("late_1h", 0.60, 0.48, 0.50, 0.55, 2.0), [])
+        self.assertEqual(self.run_late("late_1h", 0.60, 0.48, 0.50, 0.55, 0.5), [("yes",)])
+
+    def test_late_blend_shrinks_toward_the_market(self):
+        from polyfin.live.engine import blend_with_market
+        pb = blend_with_market(0.80, {"bids": [(0.49, 1)], "asks": [(0.51, 1)]}, (0.19, 0.92))
+        self.assertAlmostEqual(pb, 0.565, places=2)
+        # raw model 0.80 vs ask 0.51 would trade; blended 0.565 does not clear 0.05 + fee
+        self.assertEqual(self.run_late("late_blend", 0.80, 0.49, 0.51, 0.55, 1.5), [])
+        # market cheap vs a strong model: blend still finds an edge
+        self.assertEqual(self.run_late("late_blend", 0.97, 0.20, 0.22, 0.85, 1.5), [("yes",)])
+
+    def test_late_arms_skip_the_early_slot(self):
+        self.assertEqual(self.run_late("late_blend", 0.97, 0.20, 0.22, 0.85, 10.0), [])
 
 
 if __name__ == "__main__":
