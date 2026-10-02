@@ -35,9 +35,11 @@ def main() -> None:
     info = {}
     for i in range(0, len(cids), 20):
         q = "&".join(f"condition_ids={c}" for c in cids[i:i + 20])
-        for m in get_json(f"https://gamma-api.polymarket.com/markets?{q}&limit=50"):
-            info[m["conditionId"]] = (json.loads(m.get("outcomePrices") or "[]"),
-                                      m.get("umaResolutionStatus"))
+        for closed in ("false", "true"):          # Gamma returns only open markets by default
+            for m in get_json(f"https://gamma-api.polymarket.com/markets?{q}&closed={closed}"
+                              f"&limit=50"):
+                info[m["conditionId"]] = (json.loads(m.get("outcomePrices") or "[]"),
+                                          m.get("umaResolutionStatus"))
     now = time.time()
     tot, n = defaultdict(float), defaultdict(int)
     print(f"{'market':30} {'side':4} {'leg':>3} {'cost':>6} {'yes px':>7} {'state':>9} {'pnl':>7}")
@@ -57,6 +59,8 @@ def main() -> None:
             tot[state] += pnl
         else:
             tot["open_cost"] += cost
+            if yes is not None:                     # mark to market at the current price
+                tot["open_mtm"] += sh * ((yes if side == "yes" else 1 - yes) - avg) - fee
         n[state] += 1
         print(f"{slug[:30]:30} {side:4} {leg or 1:3d} {cost:6.2f} "
               f"{yes if yes is not None else float('nan'):7.3f} {state:>9} "
@@ -64,8 +68,10 @@ def main() -> None:
     prov = tot["resolved"] + tot["decided"]
     print(f"\nbooked:      {booked[0]} positions, P&L {booked[1]:+.2f} on cost {booked[2]:.2f}")
     print(f"provisional: {n['resolved']} resolved + {n['decided']} decided, P&L {prov:+.2f}")
-    print(f"open:        {n['open']} positions, cost {tot['open_cost']:.2f}")
-    print(f"booked + provisional P&L: {booked[1] + prov:+.2f}")
+    print(f"open:        {n['open']} positions, cost {tot['open_cost']:.2f}, "
+          f"marked to market {tot['open_mtm']:+.2f}")
+    print(f"booked + provisional P&L: {booked[1] + prov:+.2f}   "
+          f"(+ open marked to market: {booked[1] + prov + tot['open_mtm']:+.2f})")
     try:
         from .clob import ClobExecutor
         bal = ClobExecutor(Credentials()).collateral_balance()
