@@ -26,6 +26,7 @@ def parse_chart(payload: dict) -> list[tuple]:
 
 
 SPARK_BATCH = 20        # the spark endpoint takes up to 20 symbols per request (45 -> HTTP 400)
+RECENT_CLOSES_S = 900   # record_closes writes only the last 15 minutes
 
 
 def parse_spark(payload: dict) -> dict[str, list[tuple]]:
@@ -57,7 +58,10 @@ def record_closes(conn, symbols: list[str]) -> int:
         except Exception as e:
             log.warning("spark %s..: %s", symbols[i], e)
             continue
-        rows = [(sym, t, c) for sym, pts in got.items() for t, c in pts]
+        # only the recent tail: history is record_bars' job, and upserting a whole day
+        # for 45 symbols every minute was ~31k rows of needless writes
+        cutoff = time.time() - RECENT_CLOSES_S
+        rows = [(sym, t, c) for sym, pts in got.items() for t, c in pts if t >= cutoff]
         conn.executemany(
             "INSERT INTO bars (symbol, ts, close) VALUES (%s,%s,%s) "
             "ON CONFLICT (symbol, ts) DO UPDATE SET close = excluded.close", rows)
