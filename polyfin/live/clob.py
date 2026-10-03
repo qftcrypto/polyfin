@@ -147,26 +147,36 @@ class ClobExecutor:
             log.exception("cancel %s failed - an order may be resting", oid)
 
     # -- reconciliation ---------------------------------------------------------
-    def venue_fills(self, token_id: str, since_s: float | None = None):
+    def venue_fills(self, token_id: str, since_s: float | None = None,
+                    order_id: str | None = None, exclude_orders=()):
         """What the VENUE says we bought on this token since `since_s`.
 
-        (shares, vwap, trade ids), shares 0.0 when nothing, or None when the
-        question could not be answered - which means unknown, never "no fill".
+        With `order_id`, only that order's own trades (taker_order_id): a token can
+        carry several of our orders (ladder legs), and summing the token credited
+        leg 2's shares to leg 1 (2026-10-02).  Without one, trades of our other
+        orders (`exclude_orders`) are left out.
+
+        (shares, vwap, trade ids, fee_rate_bps set), shares 0.0 when nothing, or
+        None when the question could not be answered - unknown, never "no fill".
         """
         from py_clob_client_v2.clob_types import TradeParams
+        excl = {o for o in exclude_orders if o}
         try:
             rows = [t for t in self.client.get_trades(TradeParams(asset_id=token_id))
                     if str(t.get("status", "")).upper() != "FAILED"
                     and str(t.get("side", "")).upper() == "BUY"
-                    and (not since_s or int(t.get("match_time") or 0) >= since_s)]
+                    and (not since_s or int(t.get("match_time") or 0) >= since_s)
+                    and (t.get("taker_order_id") == order_id if order_id
+                         else t.get("taker_order_id") not in excl)]
         except Exception as e:
             log.warning("venue_fills(%s) failed: %s", token_id[:16], str(e)[:120])
             return None
         shares = sum(float(t.get("size") or 0) for t in rows)
         if shares <= 0:
-            return 0.0, 0.0, []
+            return 0.0, 0.0, [], set()
         cost = sum(float(t.get("size") or 0) * float(t.get("price") or 0) for t in rows)
-        return shares, cost / shares, [t.get("id") for t in rows if t.get("id")]
+        return (shares, cost / shares, [t.get("id") for t in rows if t.get("id")],
+                {str(t.get("fee_rate_bps")) for t in rows})
 
     def settlement_state(self, trade_ids) -> bool | None:
         """True once any leg has a transaction hash, False if every leg FAILED,

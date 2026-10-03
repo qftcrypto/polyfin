@@ -36,19 +36,26 @@ def reconcile(conn, clob) -> None:
     now = time.time()
     rows = conn.execute(
         "SELECT id, token_id, created_at, status, shares_req, shares_filled, trade_ids, "
-        "reconciled_at FROM trade.orders WHERE mode='live' AND ("
+        "reconciled_at, venue_order_id FROM trade.orders WHERE mode='live' AND ("
         " status = 'unknown' OR (status = 'pending' AND created_at < %s)"
         " OR (shares_filled > 0 AND reconciled_at IS NULL AND created_at < %s)"
         " OR (shares_filled > 0 AND settle_state IS NULL))",
         (now - PENDING_STALE_S, now - VENUE_GRACE_S)).fetchall()
     conn.commit()
-    for oid, tok, created, status, req, filled, tids, rec_at in rows:
+    for oid, tok, created, status, req, filled, tids, rec_at, voi in rows:
         age = now - created
         if status in ("unknown", "pending") or (rec_at is None and age >= VENUE_GRACE_S):
-            v = clob.venue_fills(tok, since_s=created - 5)
+            others = [r[0] for r in conn.execute(
+                "SELECT venue_order_id FROM trade.orders WHERE mode='live' AND token_id=%s "
+                "AND id <> %s AND venue_order_id IS NOT NULL", (tok, oid))]
+            conn.commit()
+            v = clob.venue_fills(tok, since_s=created - 5, order_id=voi, exclude_orders=others)
             if v is None:
                 continue                                  # unknowable now - stay as is
-            shares, vwap, ids = v
+            shares, vwap, ids, bps = v
+            # book the fee the venue charged: fee_rate_bps 0 means none (finance
+            # markets, 2026-10-02: all 56 live fills were 0)
+            fee = 0.0 if bps == {"0"} else taker_fee(shares, vwap)
             if shares > 0:
                 if abs(shares - filled) > 1e-6:
                     log.warning("order %d: venue says %.2f shares, we had %.2f - using venue",
@@ -58,7 +65,7 @@ def reconcile(conn, clob) -> None:
                     " trade_ids=%s, filled_at=COALESCE(filled_at, %s), reconciled_at=%s"
                     " WHERE id=%s",
                     ("filled" if shares >= req - 1e-6 else "partial", shares, vwap,
-                     taker_fee(shares, vwap), json.dumps(ids), int(now), int(now), oid))
+                     fee, json.dumps(ids), int(now), int(now), oid))
                 tids = ids
             elif age >= VENUE_GRACE_S:
                 if filled > 0:

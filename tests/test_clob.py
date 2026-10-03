@@ -119,8 +119,17 @@ class TestVenue(unittest.TestCase):
         ])
         self.now = now
 
+    def test_venue_fills_by_order_id(self):
+        for t in self.c.trades:
+            t["taker_order_id"] = "o2" if t["id"] == "b" else "o1"
+        shares, vwap, ids, _ = ex(self.c).venue_fills("tok", since_s=self.now - 60, order_id="o1")
+        self.assertEqual((shares, ids), (3.0, ["a"]))     # leg 2's trade (b) is not ours here
+        shares, _, ids, _ = ex(self.c).venue_fills("tok", since_s=self.now - 60,
+                                                    exclude_orders=["o2"])
+        self.assertEqual(ids, ["a"])
+
     def test_venue_fills_ignores_failed_sells_and_old(self):
-        shares, vwap, ids = ex(self.c).venue_fills("tok", since_s=self.now - 60)
+        shares, vwap, ids, bps = ex(self.c).venue_fills("tok", since_s=self.now - 60)
         self.assertEqual((shares, sorted(ids)), (5.0, ["a", "b"]))
         self.assertAlmostEqual(vwap, (3 * 0.40 + 2 * 0.45) / 5)
 
@@ -137,8 +146,8 @@ class FakeClob:
     def __init__(self, fills=None, state=None):
         self.fills, self.state = fills, state
 
-    def venue_fills(self, token_id, since_s=None):
-        return self.fills
+    def venue_fills(self, token_id, since_s=None, order_id=None, exclude_orders=()):
+        return None if self.fills is None else (*self.fills, {"0"})
 
     def settlement_state(self, ids):
         return self.state
