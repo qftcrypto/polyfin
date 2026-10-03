@@ -52,10 +52,11 @@ def reconcile(conn, clob) -> None:
             v = clob.venue_fills(tok, since_s=created - 5, order_id=voi, exclude_orders=others)
             if v is None:
                 continue                                  # unknowable now - stay as is
-            shares, vwap, ids, bps = v
-            # book the fee the venue charged: fee_rate_bps 0 means none (finance
-            # markets, 2026-10-02: all 56 live fills were 0)
-            fee = 0.0 if bps == {"0"} else taker_fee(shares, vwap)
+            shares, vwap, ids, _ = v
+            # Book the published taker fee.  The trade records' fee_rate_bps reads 0, but
+            # the wallet paid $4.11 above trade notional on 56 fills (on-chain pUSD
+            # flows, 2026-10-02) - against $4.30 estimated - so that field is not the fee.
+            fee = taker_fee(shares, vwap)
             if shares > 0:
                 if abs(shares - filled) > 1e-6:
                     log.warning("order %d: venue says %.2f shares, we had %.2f - using venue",

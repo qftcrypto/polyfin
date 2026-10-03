@@ -158,6 +158,7 @@ class ClobExecutor:
 
         (shares, vwap, trade ids, fee_rate_bps set), shares 0.0 when nothing, or
         None when the question could not be answered - unknown, never "no fill".
+        fee_rate_bps is informational: it reads 0 on finance fills that did pay the fee.
         """
         from py_clob_client_v2.clob_types import TradeParams
         excl = {o for o in exclude_orders if o}

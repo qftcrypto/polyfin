@@ -5,8 +5,9 @@
     .venv/bin/python scripts/rereconcile_live.py --write    # apply them
 
 One-off repair for the 2026-10-02 reconcile bug (a ladder's leg 1 was credited
-leg 2's shares on the same token) and for fees: the venue charged 0 bps on every
-finance fill, so the booked fee becomes 0 where the venue says 0.  Idempotent.
+leg 2's shares on the same token).  Fees are the published taker fee: the trade
+records' fee_rate_bps reads 0, but on-chain the wallet paid ~$4.11 above trade
+notional on 56 fills, matching the estimate.  Idempotent.
 P&L of settled orders is recomputed from the corrected shares, price and fee.
 """
 from __future__ import annotations
@@ -42,7 +43,7 @@ def main() -> int:
             print(f"   {oid}: venue answer {v} - left as is")
             continue
         vsh, vpx, ids, bps = v
-        vfee = 0.0 if bps == {"0"} else taker_fee(vsh, vpx)
+        vfee = taker_fee(vsh, vpx)        # trade records' fee_rate_bps (0) is not the fee
         if abs(vsh - sh) > 1e-6 or abs(vpx - px) > 1e-6 or abs(vfee - fee) > 1e-6:
             changed += 1
             pnl = vsh * (outcome - vpx) - vfee if outcome is not None else None
