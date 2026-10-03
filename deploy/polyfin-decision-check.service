@@ -1,0 +1,9 @@
+[Unit]
+Description=polyfin pre-agreed decision check (3-week mark) -> data/decision_check_*.txt
+After=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/opt/polyfin
+ExecStart=/bin/sh -c '/opt/polyfin/.venv/bin/python -m research.decision_check --since 2026-10-01 --out /opt/polyfin/data/decision_check_$(date -u +%%Y-%%m-%%d).txt'

@@ -54,7 +54,7 @@ def half_spreads(conn) -> dict:
     return {k: float(np.median(v)) for k, v in hs.items()}
 
 
-def candidates(a, p, specs, books, half, books_only):
+def candidates(a, p, specs, books, half, books_only, drop_default=False):
     """One row per (point, side): cid, side, day, tau, p_side, ask, win, source."""
     tok = {s.condition_id: s.token_yes for s in specs}
     series = {s.condition_id: s.series_slug for s in specs}
@@ -71,6 +71,8 @@ def candidates(a, p, specs, books, half, books_only):
             src = "book"
         elif books_only:
             continue
+        elif drop_default and abs(a["pm"][i] - 0.5) < 1e-9:
+            continue                     # an untraded market's opening default, not a price
         else:
             h = half.get(series[cid], 0.03)
             bid, ask, src = a["pm"][i] - h, a["pm"][i] + h, "mid"

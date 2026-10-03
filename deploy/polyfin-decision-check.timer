@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the polyfin decision check once, after the 15th trading day (Wed 2026-10-21) settles
+
+[Timer]
+OnCalendar=2026-10-22 12:13:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
