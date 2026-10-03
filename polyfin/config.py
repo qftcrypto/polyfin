@@ -101,7 +101,9 @@ def yahoo_symbols() -> list[str]:
 LOOKBACK_DAYS = 7            # backfill depth on first run (Yahoo 1m caps at ~8d)
 
 # poll intervals, seconds
-BARS_EVERY = 120             # ~50 symbols -> ~1,500 Yahoo req/hr, under the ~2,000 soft cap
+CLOSES_EVERY = 60            # spark: 45 symbols in 3 requests -> 180 req/h, 60s-fresh prices
+BARS_EVERY = 600             # full OHLCV bars, one request per symbol -> 270 req/h
+                             # (Yahoo's unofficial limit is ~2,000-2,500 req/h per IP)
 BOOKS_EVERY = 30
 HISTORY_EVERY = 600
 DISCOVERY_EVERY = 900

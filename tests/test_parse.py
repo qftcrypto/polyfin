@@ -82,5 +82,14 @@ class TestBadPrints(unittest.TestCase):
         self.assertEqual([r[0] for r in parse_chart(p)], [60, 120])
 
 
+
+class TestSpark(unittest.TestCase):
+    def test_parse_spark(self):
+        from polyfin.yahoo import parse_spark
+        p = {"AAPL": {"timestamp": [60, 120, 155], "close": [1.0, None, 3.0]},
+             "MSFT": {"timestamp": [60], "close": [2.0]}, "BAD": None}
+        self.assertEqual(parse_spark(p), {"AAPL": [(60, 1.0)], "MSFT": [(60, 2.0)], "BAD": []})
+
+
 if __name__ == "__main__":
     unittest.main()

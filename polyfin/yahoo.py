@@ -25,6 +25,47 @@ def parse_chart(payload: dict) -> list[tuple]:
     return [(t, *row) for t, *row in zip(ts, *cols) if row[3] is not None and t % 60 == 0]
 
 
+SPARK_BATCH = 20        # the spark endpoint takes up to 20 symbols per request (45 -> HTTP 400)
+
+
+def parse_spark(payload: dict) -> dict[str, list[tuple]]:
+    """Spark JSON -> {symbol: [(ts, close)]}, whole minutes only, no null closes."""
+    out = {}
+    for sym, v in (payload or {}).items():
+        v = v or {}
+        out[sym] = [(t, c) for t, c in zip(v.get("timestamp") or [], v.get("close") or [])
+                    if c is not None and t % 60 == 0]
+    return out
+
+
+def fetch_closes(symbols: list[str]) -> dict[str, list[tuple]]:
+    q = urllib.parse.quote(",".join(symbols))
+    return parse_spark(get_json(f"https://query1.finance.yahoo.com/v8/finance/spark?symbols={q}"
+                                f"&range=1d&interval=1m"))
+
+
+def record_closes(conn, symbols: list[str]) -> int:
+    """Today's 1m closes for many symbols per request (spark): fresh prices cheaply.
+
+    Rows it creates have no open/high/low/volume until record_bars fills them; an
+    existing full bar only gets its close refreshed.
+    """
+    total = 0
+    for i in range(0, len(symbols), SPARK_BATCH):
+        try:
+            got = fetch_closes(symbols[i:i + SPARK_BATCH])
+        except Exception as e:
+            log.warning("spark %s..: %s", symbols[i], e)
+            continue
+        rows = [(sym, t, c) for sym, pts in got.items() for t, c in pts]
+        conn.executemany(
+            "INSERT INTO bars (symbol, ts, close) VALUES (%s,%s,%s) "
+            "ON CONFLICT (symbol, ts) DO UPDATE SET close = excluded.close", rows)
+        conn.commit()
+        total += len(rows)
+    return total
+
+
 def fetch_bars(symbol: str, days: int) -> list[tuple]:
     days = max(1, min(days, LOOKBACK_DAYS))
     url = f"{YAHOO}/{urllib.parse.quote(symbol)}?interval=1m&range={days}d&includePrePost=true"
@@ -32,11 +73,13 @@ def fetch_bars(symbol: str, days: int) -> list[tuple]:
 
 
 def record_bars(conn, symbols: list[str]) -> int:
-    """Upsert recent bars; the range requested covers the gap since the last stored bar."""
+    """Upsert recent full bars; the range requested covers the gap since the last FULL bar
+    (record_closes keeps the newest row fresh, so MAX(ts) alone would hide an outage)."""
     now = time.time()
     total = 0
     for sym in symbols:
-        last = conn.execute("SELECT MAX(ts) FROM bars WHERE symbol=%s", (sym,)).fetchone()[0]
+        last = conn.execute("SELECT MAX(ts) FROM bars WHERE symbol=%s AND open IS NOT NULL",
+                            (sym,)).fetchone()[0]
         days = LOOKBACK_DAYS if last is None else int((now - last) // 86400) + 1
         try:
             rows = fetch_bars(sym, days)

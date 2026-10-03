@@ -33,6 +33,7 @@ def main() -> None:
     tasks = [
         ("discovery", config.DISCOVERY_EVERY, lambda: polymarket.discover(conn)),
         ("bars", config.BARS_EVERY, lambda: yahoo.record_bars(conn, symbols)),
+        ("closes", config.CLOSES_EVERY, lambda: yahoo.record_closes(conn, symbols)),
         ("history", config.HISTORY_EVERY, lambda: polymarket.record_history(conn)),
         ("books", config.BOOKS_EVERY, lambda: polymarket.record_books(conn)),
     ]
