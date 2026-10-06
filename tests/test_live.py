@@ -74,7 +74,8 @@ class TestSlots(unittest.TestCase):
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
                          {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05,
                           "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05,
-                          "confirm": 0.05, "late_1h": 0.05, "late_blend": 0.05})
+                          "confirm": 0.05, "late_1h": 0.05, "late_blend": 0.05,
+                          "min15": 0.05})
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
                                                                   "rep_flip10")},
                          {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})
@@ -163,6 +164,19 @@ class TestLadderDB(unittest.TestCase):
         legs = self.cycle(0.50, 0.33, 0.60)                                        # ~0.16
         self.assertEqual([l for l, _, _ in legs], [1, 2, 3])
         self.assertEqual(len(self.cycle(0.50, 0.20, 0.60)), 3)                     # no 4th rung
+
+    def test_min_price_floor(self):
+        cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10], "min_price": 0.15}
+        books = lambda ya: {"tokY": {"bids": [], "asks": [(ya, 1000.0)], "ts": 0},
+                            "tokN": {"bids": [], "asks": [(0.95, 1000.0)], "ts": 0}}
+        run = lambda p, ya: self.trader._run_arm("paper", "min15", cfg, [(self.spec, p, (0, 0, 1e-4, 1))],
+                                                 {self.cid: "tokN"}, books(ya), self.now, None)
+        q = "SELECT best_ask FROM trade.orders WHERE condition_id=%s AND arm='min15'"
+        run(0.20, 0.10)                                   # edge 0.10 but ask below the floor
+        self.assertEqual(self.conn.execute(q, (self.cid,)).fetchall(), [])
+        run(0.30, 0.20)                                   # above the floor: trades
+        self.assertEqual(len(self.conn.execute(q, (self.cid,)).fetchall()), 1)
+        self.conn.commit()
 
     def test_wide_edge_trades(self):
         # no edge cap: a 0.36 edge is traded (bad prints are filtered at load instead)

@@ -53,14 +53,16 @@ FILTERS = {
 }
 
 
-def simulate(points, rule, allow=FILTERS["both sides"]):
+def simulate(points, rule, allow=FILTERS["both sides"], window="early"):
     """points[cid] = chronological [(tau, day, p_yes, yes_asks, no_asks, y)]"""
     fills, wanted = [], 0.0          # fills: (cid, day, dollars, avg_px, shares, win)
     for cid, pts in points.items():
         side, max_e, first_e, spent = None, 0.0, None, 0.0
         for tau, day, p, ya, na, y in pts:
-            if tau <= 3:
+            if window == "early" and tau <= 3:
                 break
+            if window == "late" and tau > 3:
+                continue
             sides = {"yes": (p, ya, y), "no": (1 - p, na, 1 - y)}
             if side is None:
                 best = max(((s, ps - lad[0][0] - fee_per_share(lad[0][0]))
@@ -161,6 +163,19 @@ def main() -> None:
                   f"per share {np.median(pair) if pair else float('nan'):.3f} "
                   f"({sum(x < 1 for x in pair)} locked a profit, {sum(x >= 1 for x in pair)} a loss); "
                   f"P&L in those markets {pnl_two:+.2f}")
+        return
+    if "--late" in sys.argv:
+        for rule in ("flat5", "ladder2"):
+            print(f"   -- {rule}")
+            fe, we = simulate(points, rule, window="early")
+            fl, wl = simulate(points, rule, window="late")
+            report("early only", fe, we)
+            report("late only", fl, wl)
+            report("early+late", fe + fl, we + wl)
+            for lo, hi in ((0, 1), (1, 2), (2, 3)):
+                sub = {c: [q for q in pts if lo < q[0] <= hi or (lo == 0 and q[0] <= hi)]
+                       for c, pts in points.items()}
+                report(f"late {lo}-{hi}h", *simulate(sub, rule, window="late"))
         return
     if "--straddle-dog" in sys.argv:
         dog = FILTERS["underdog only (ask<0.50)"]

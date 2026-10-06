@@ -58,6 +58,10 @@ ARMS = {
         # logit P = w_model logit(model) + w_market logit(market mid): weights fitted on
         # late points of 9 days (best late Brier 0.0752 vs model 0.0787 / market 0.0763)
         "late_blend": {"min_edge": 0.05, "slots": {"late"}, "blend": (0.19, 0.92)},
+        # live's ladder2 with a 0.15 price floor (research/dust.py, 2026-10-06: asks 0.05-0.15
+        # lost on both price sources - the model overstates long shots there)
+        "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
+                  "min_price": 0.15},
     },
     "live": {
         # 2026-10-02: base -> two-buy ladder (research/ladder.py, 8 days; the second

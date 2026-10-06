@@ -296,6 +296,7 @@ class Trader:
         risk = risk_state(conn, mode, now, arm)
         entered = 0
         rungs = cfg.get("rungs", [cfg["min_edge"]])
+        min_px = cfg.get("min_price", C.MIN_PRICE)      # an arm may raise the price floor
         confirmed_now: set = set()
         for s, p, f in priced:
             slot = slot_for(s.target_ts - now)
@@ -315,7 +316,7 @@ class Trader:
                     continue
                 ask, size = bk["asks"][0]
                 edge = ps - ask - fee_per_share(ask)
-                if C.MIN_PRICE <= ask <= C.MAX_PRICE and (best is None or edge > best[0]):
+                if min_px <= ask <= C.MAX_PRICE and (best is None or edge > best[0]):
                     best = (edge, side, tok, ps, bk)
             if best is None or best[0] < rungs[0]:
                 continue                                # nothing reaches even the first rung
@@ -332,7 +333,7 @@ class Trader:
                     bk = books.get(tok)
                     if side == side0 and bk and bk["asks"]:
                         ask = bk["asks"][0][0]
-                        if C.MIN_PRICE <= ask <= C.MAX_PRICE:
+                        if min_px <= ask <= C.MAX_PRICE:
                             best = (ps - ask - fee_per_share(ask), side, tok, ps, bk)
             if best is None or best[0] < need:
                 continue
