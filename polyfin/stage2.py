@@ -41,7 +41,9 @@ MIN_R2 = 0.1                      # below this the futures say little about the 
 
 GAMMAS = np.linspace(0.0, 1.0, 5)
 SHARPS = np.linspace(0.6, 2.5, 39)
-SHARPEN_HOURS = 3.0               # live pricing sharpens only this close to the target
+# Late sharpening is OFF (2026-10-05): on 10 days the fitted factor (b ~ 0.8-0.9) made
+# last-3h Brier worse (0.0761 vs 0.0741 raw; market 0.0751).  0 = never applied.
+SHARPEN_HOURS = 0.0
 
 
 class Stage2:
@@ -268,7 +270,8 @@ def main() -> None:
     out, fits = evaluate(a)
     report(a, out, fits)
 
-    params = fit_sharp(a, a["tau"] <= SHARPEN_HOURS)
+    params = (fit_sharp(a, a["tau"] <= SHARPEN_HOURS) if SHARPEN_HOURS > 0
+              else {"gamma": 0.0, "b": 1.0})
     params["gamma"] = fit_sharp(a, np.ones_like(a["y"], dtype=bool), fit_b=False)["gamma"]
     params["sharpen_hours"] = SHARPEN_HOURS
     pfull = prob_vec(a["xn"], a["v"], a["R"], params["gamma"], params["b"])
