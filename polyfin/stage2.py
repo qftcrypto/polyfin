@@ -138,7 +138,7 @@ def prob_vec(x, v, R, gamma, b):
     with np.errstate(divide="ignore", invalid="ignore"):
         d = np.where(v2 > 1e-14, (x - v2 / 2) / np.sqrt(np.maximum(v2, 1e-300)),
                      np.sign(x) * np.inf)
-    return np.vectorize(norm_cdf)(b * d)
+    return np.vectorize(norm_cdf, otypes=[float])(b * d)       # otypes: empty input is fine
 
 
 # -- evaluation -------------------------------------------------------------------

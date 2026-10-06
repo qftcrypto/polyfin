@@ -20,6 +20,10 @@ class TestStage2(unittest.TestCase):
         self.assertGreater(p2, p1)
         self.assertEqual(prob_vec(np.array([0.001]), np.array([0.0]), np.ones(1), 0, 1)[0], 1.0)
 
+    def test_empty_input(self):
+        # the late-sharpening subset is empty when SHARPEN_HOURS = 0 (refit crashed on it)
+        self.assertEqual(prob_vec(np.array([]), np.array([]), np.array([]), 0.0, 1.0).size, 0)
+
     def test_vol_regime_widens(self):
         args = (np.array([0.005]), np.array([1e-4]))
         calm = prob_vec(*args, np.array([1.0]), 1.0, 1.0)[0]
