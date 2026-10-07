@@ -1,6 +1,6 @@
 """Divergence-proportional sizing: hold $1 per 0.01 of edge, one side, top-ups only.
 
-    .venv/bin/python -m research.scale [--books-only] [--all-windows] [--step 5]
+    .venv/bin/python -m research.scale [--all-windows] [--step 5]
 
 Per market: the first point where a side's edge (model - ask - fee) reaches
 START (0.05) fixes the side and buys $100 x edge (0.05 -> $5).  Afterwards, at
@@ -25,7 +25,7 @@ from polyfin.live.fees import fee_per_share
 from polyfin.stage1 import load_specs
 from polyfin.stage2 import Stage2, collect, evaluate
 
-from .zones import book_index, candidates, half_spreads
+from .zones import book_index, candidates
 
 START = 0.05
 PER_POINT = 100.0          # $ per 1.00 of edge = $1 per 0.01
@@ -108,7 +108,6 @@ def summarize(name, buys):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--books-only", action="store_true")
     ap.add_argument("--all-windows", action="store_true", help="default: early slot only")
     ap.add_argument("--step", type=int, default=5, help="minutes between points")
     args = ap.parse_args()
@@ -116,13 +115,12 @@ def main() -> None:
     specs = load_specs(conn)
     a = collect(Stage2(conn), specs, conn, step=args.step, hours=36)
     out, _ = evaluate(a)
-    rows = candidates(a, out["sharp<=3h"], specs, book_index(conn), half_spreads(conn),
-                      args.books_only, drop_default=True)
+    rows = candidates(a, out["sharp<=3h"], specs, book_index(conn))
     scaled, flat = run(rows, not args.all_windows)
     capped, _ = run(rows, not args.all_windows, cap=0.10)
     ladder2 = run_ladder2(rows, not args.all_windows)
     print(f"{len(set(a['cid']))} resolved liquid markets, {len(set(a['day']))} days, points every "
-          f"{args.step} min{', book prices only' if args.books_only else ''}, "
+          f"{args.step} min, book prices only, "
           f"{'all windows' if args.all_windows else 'early slot only'}")
     print(f"   {'':34} {'buys':>5} {'mkts':>4} {'cost':>9} {'$/mkt':>6} {'max$':>6} {'pnl':>9} "
           f"{'ret/$':>7} {'days+':>5} {'worst d':>8} {'worst m':>7}")

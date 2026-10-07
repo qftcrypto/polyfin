@@ -1,6 +1,6 @@
 """Scale-in ("ladder") test: add to a position when the edge on the SAME side widens.
 
-    .venv/bin/python -m research.ladder [--books-only] [--early-only]
+    .venv/bin/python -m research.ladder [--early-only]
 
 Leg k is a fixed $1 buy (scale to $3 at will) at the first point, after leg k-1,
 where the edge (model p - ask - fee) on the side leg 1 chose reaches RUNGS[k].
@@ -23,7 +23,7 @@ from polyfin.live.fees import fee_per_share
 from polyfin.stage1 import load_specs
 from polyfin.stage2 import Stage2, collect, evaluate
 
-from .zones import book_index, candidates, half_spreads
+from .zones import book_index, candidates
 
 LADDERS = {
     "single 0.05 (live rule)": [0.05],
@@ -87,7 +87,6 @@ def summarize(name, legs):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--books-only", action="store_true")
     ap.add_argument("--early-only", action="store_true", help="only entries > 3h out (live)")
     ap.add_argument("--hours", type=float, default=36)
     args = ap.parse_args()
@@ -95,10 +94,9 @@ def main() -> None:
     specs = load_specs(conn)
     a = collect(Stage2(conn), specs, conn, step=15, hours=args.hours)
     out, _ = evaluate(a)
-    rows = candidates(a, out["sharp<=3h"], specs, book_index(conn), half_spreads(conn),
-                      args.books_only)
+    rows = candidates(a, out["sharp<=3h"], specs, book_index(conn))
     print(f"{len(set(a['cid']))} resolved liquid markets, {len(set(a['day']))} days"
-          f"{', book prices only' if args.books_only else ''}"
+          f", book prices only"
           f"{', early slot only' if args.early_only else ''}; $1 per leg")
     hdr = (f"   {'':36} {'legs':>4} {'mkts':>4} {'win%':>5} {'ask':>5} {'tau h':>5} "
            f"{'ret/$':>7} {'total$':>7} {'days+':>5} {'worst':>6}")

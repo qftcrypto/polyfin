@@ -1,7 +1,7 @@
 """Adaptive repeat buying: buy $1 of a side every time its edge is >= MIN_EDGE,
 at most once per SPACING per market, on whichever side qualifies at that moment.
 
-    .venv/bin/python -m research.repeat [--books-only] [--early-only]
+    .venv/bin/python -m research.repeat [--early-only]
 
 Unlike the ladder (adds only when the edge WIDENS on the first side), this adds
 whenever the edge PERSISTS, follows the model as it moves with the market, and
@@ -21,7 +21,7 @@ from polyfin.stage1 import load_specs
 from polyfin.stage2 import Stage2, collect, evaluate
 
 from .ladder import ret
-from .zones import book_index, candidates, half_spreads
+from .zones import book_index, candidates
 
 MIN_EDGE = 0.05
 
@@ -80,17 +80,15 @@ HDR = (f"   {'':34} {'legs':>5} {'mkts':>4} {'/mkt':>5} {'max':>4} {'win%':>5} {
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--books-only", action="store_true")
     ap.add_argument("--early-only", action="store_true")
     args = ap.parse_args()
     conn = connect()
     specs = load_specs(conn)
     a = collect(Stage2(conn), specs, conn, step=15, hours=36)
     out, _ = evaluate(a)
-    rows = candidates(a, out["sharp<=3h"], specs, book_index(conn), half_spreads(conn),
-                      args.books_only)
+    rows = candidates(a, out["sharp<=3h"], specs, book_index(conn))
     print(f"{len(set(a['cid']))} resolved liquid markets, {len(set(a['day']))} days"
-          f"{', book prices only' if args.books_only else ''}"
+          f", book prices only"
           f"{', early slot only' if args.early_only else ''}; $1 per buy, edge >= {MIN_EDGE}")
     print("   both = markets where both sides were bought; mkt+ = markets with net profit")
 

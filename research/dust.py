@@ -3,10 +3,10 @@
     .venv/bin/python -m research.dust
 
 For each ask band and edge threshold: one buy per (market, side), the first point
-the condition holds, $1 each, return after fee at resolution.  Both price sources
-(history mid +/- half spread with untraded 0.500 defaults dropped, 10 days; and
-recorded book asks only), plus the model's own calibration in the low-probability
-tail - if the model overstates long shots, "cheap" is an illusion.
+the condition holds, $1 each, return after fee at resolution, on recorded book
+asks only (the history-mid source was removed 2026-10-06 as stale), plus the
+model's own calibration in the low-probability tail - if the model overstates
+long shots, "cheap" is an illusion.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from polyfin.live.fees import fee_per_share
 from polyfin.stage1 import load_specs
 from polyfin.stage2 import Stage2, collect, evaluate
 
-from .zones import book_index, candidates, half_spreads
+from .zones import book_index, candidates
 
 BANDS = [(0.01, 0.05), (0.05, 0.10), (0.10, 0.15), (0.15, 0.20), (0.20, 0.30), (0.30, 0.50)]
 
@@ -58,11 +58,8 @@ def main() -> None:
     a = collect(Stage2(conn), specs, conn, step=5, hours=36)
     out, _ = evaluate(a)
     p = out["sharp<=3h"]
-    bi, hs = book_index(conn), half_spreads(conn)
-    hist = candidates(a, p, specs, bi, hs, False, drop_default=True)
-    books = candidates(a, p, specs, bi, hs, True)
+    books = candidates(a, p, specs, book_index(conn))
     print(f"{len(set(a['cid']))} resolved liquid markets, {len(set(a['day']))} days")
-    table(hist, "history-based prices (untraded 0.500 defaults dropped)")
     table(books, "recorded book asks only")
 
     m, y = a["pm"], a["y"]

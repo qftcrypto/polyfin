@@ -1,6 +1,6 @@
 """Does buying the other side after a flip work as a hedge?
 
-    .venv/bin/python -m research.hedge [--books-only] [--early-only]
+    .venv/bin/python -m research.hedge [--early-only]
 
 Takes the repeat strategy (every 15m, edge >= 0.05, either side) and, for the
 markets where it bought BOTH sides, compares the market's net P&L with and
@@ -21,20 +21,18 @@ from polyfin.stage2 import Stage2, collect, evaluate
 
 from .ladder import ret
 from .repeat import run
-from .zones import book_index, candidates, half_spreads
+from .zones import book_index, candidates
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--books-only", action="store_true")
     ap.add_argument("--early-only", action="store_true")
     args = ap.parse_args()
     conn = connect()
     specs = load_specs(conn)
     a = collect(Stage2(conn), specs, conn, step=15, hours=36)
     out, _ = evaluate(a)
-    rows = candidates(a, out["sharp<=3h"], specs, book_index(conn), half_spreads(conn),
-                      args.books_only)
+    rows = candidates(a, out["sharp<=3h"], specs, book_index(conn))
     for cap in (10, 999):
         legs = run(rows, 0.25, cap, args.early_only)
         by = defaultdict(list)

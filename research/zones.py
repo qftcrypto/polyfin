@@ -9,10 +9,11 @@ Method
   no day is scored by parameters fitted on it.
 * Every `step` minutes of each resolved liquid market, both sides are candidate
   buys: Yes at the Yes ask, No at the No ask (= 1 - Yes bid).
-* Prices: the recorded book snapshot (within 2 min) when there is one; otherwise
-  the CLOB price-history mid +/- the series' median half spread.  `--books-only`
-  restricts to real book prices (fewer days, honest asks - matters for dust,
-  where half a spread is a large fraction of the price).
+* Prices: recorded book snapshots only (within 2 min of the point).  Points with
+  no snapshot are skipped.  The old fallback - CLOB price-history mid +/- half a
+  spread - was removed on 2026-10-06: those prices are stale (history ask 0.468
+  vs the next real ask 0.709; edge +0.196 vs -0.045), so it manufactured edge
+  and every result built on it was invalid.
 * A zone takes ONE entry per market and side: the first point that qualifies.
   Per-trade P&L = outcome - ask - taker fee, per $1-payout contract.
 * Same-day markets move together, so results are also shown per day; a zone
@@ -44,18 +45,9 @@ def book_index(conn):
     return idx
 
 
-def half_spreads(conn) -> dict:
-    hs = defaultdict(list)
-    for sl, spr in conn.execute(
-            "SELECT m.series_slug, b.best_ask - b.best_bid FROM pm_books b JOIN markets m "
-            "ON m.token_yes = b.token_id WHERE b.best_ask - b.best_bid BETWEEN 0 AND 0.5"):
-        hs[sl].append(spr / 2)
-    conn.commit()
-    return {k: float(np.median(v)) for k, v in hs.items()}
-
-
-def candidates(a, p, specs, books, half, books_only, drop_default=False):
-    """One row per (point, side): cid, side, day, tau, p_side, ask, win, source."""
+def candidates(a, p, specs, books):
+    """One row per (point, side) with a recorded book: cid, side, day, tau, p_side,
+    ask, win, source.  Real book prices only - see the module docstring."""
     tok = {s.condition_id: s.token_yes for s in specs}
     series = {s.condition_id: s.series_slug for s in specs}
     end = {s.condition_id: s.target_ts for s in specs}
@@ -65,17 +57,10 @@ def candidates(a, p, specs, books, half, books_only, drop_default=False):
         t = end[cid] - a["tau"][i] * 3600
         bt, bv = books.get(tok[cid], ([], []))
         j = bisect_right(bt, t) - 1
-        bid = ask = None
-        if j >= 0 and t - bt[j] <= 120:
-            bid, ask = bv[j]
-            src = "book"
-        elif books_only:
+        if j < 0 or t - bt[j] > 120:
             continue
-        elif drop_default and abs(a["pm"][i] - 0.5) < 1e-9:
-            continue                     # an untraded market's opening default, not a price
-        else:
-            h = half.get(series[cid], 0.03)
-            bid, ask, src = a["pm"][i] - h, a["pm"][i] + h, "mid"
+        bid, ask = bv[j]
+        src = "book"
         y = a["y"][i]
         if ask is not None and 0 < ask < 1:
             rows.append((cid, "yes", a["day"][i], a["tau"][i], p[i], ask, y, src, series[cid]))
@@ -127,17 +112,16 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=float, default=36)
     ap.add_argument("--step", type=int, default=15)
-    ap.add_argument("--books-only", action="store_true")
     args = ap.parse_args()
     conn = connect()
     specs = load_specs(conn)
     a = collect(Stage2(conn), specs, conn, step=args.step, hours=args.hours)
     out, _ = evaluate(a)
     p = out["sharp<=3h"]
-    rows = candidates(a, p, specs, book_index(conn), half_spreads(conn), args.books_only)
+    rows = candidates(a, p, specs, book_index(conn))
     print(f"{len(set(a['cid']))} resolved liquid markets over {len(set(a['day']))} days, "
           f"{len(rows)} candidate (point, side) buys"
-          f"{' - book prices only' if args.books_only else ''}")
+          " - recorded book prices only")
 
     edge = lambda r: r[4] - r[5] - fee_per_share(r[5])
     E, L = (lambda r: r[3] > 3), (lambda r: r[3] <= 3)          # early / late slot
