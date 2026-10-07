@@ -75,7 +75,7 @@ class TestSlots(unittest.TestCase):
                          {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05,
                           "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05,
                           "confirm": 0.05, "late_1h": 0.05, "late_blend": 0.05,
-                          "min15": 0.05})
+                          "min15": 0.05, "ladder2": 0.05})
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
                                                                   "rep_flip10")},
                          {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})

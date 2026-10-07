@@ -247,6 +247,11 @@ class Trader:
         if mode == "paused":
             log.info("paused (%s)", reason)
             return
+        if self.launch_mode == "live" and mode != "live":
+            # the paper process runs the paper arms; a live process demoted to paper
+            # only keeps its bookkeeping (reconcile, redeem) so open positions resolve
+            log.info("live entries off (%s) - bookkeeping only", reason)
+            return
         # recorder liveness: the newest bar of ANY symbol.  Not the futures -
         # Yahoo serves CME bars 10-20 minutes late, so they always look stale.
         newest = conn.execute("SELECT MAX(ts) FROM bars WHERE ts > %s",

@@ -60,6 +60,8 @@ ARMS = {
         "late_blend": {"min_edge": 0.05, "slots": {"late"}, "blend": (0.19, 0.92)},
         # live's ladder2 with a 0.15 price floor (research/dust.py, 2026-10-06: asks 0.05-0.15
         # lost on both price sources - the model overstates long shots there)
+        # shadow of the live rule, so it keeps being measured while live is off
+        "ladder2": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10]},
         "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                   "min_price": 0.15},
     },
