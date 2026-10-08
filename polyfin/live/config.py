@@ -62,6 +62,11 @@ ARMS = {
         # lost on both price sources - the model overstates long shots there)
         # shadow of the live rule, so it keeps being measured while live is off
         "ladder2": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10]},
+        # live's ladder2 on the favourite side only (ask >= 0.50), 2026-10-08: real-book
+        # backtest +5.6%, 6/7 days, +$1.90 without the best 5 markets; forward fills at
+        # >= 0.50 so far about breakeven (live -8.4%, paper +0.8%) - measured here cleanly
+        "fav50": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
+                  "min_price": 0.50},
         "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                   "min_price": 0.15},
     },
