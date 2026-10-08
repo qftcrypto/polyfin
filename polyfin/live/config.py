@@ -67,6 +67,14 @@ ARMS = {
         # >= 0.50 so far about breakeven (live -8.4%, paper +0.8%) - measured here cleanly
         "fav50": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                   "min_price": 0.50},
+        # strikes only, with the strikes-sharpened model (2026-10-08, research/strike_repeat.py:
+        # real books, 7 days, ~+14-15% per $ at any repeat rate, 6/7 days positive)
+        "strike_rep": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+                       "repeat": REPEAT, "flip": None},
+        # the live candidate: 2 buys at edge >= 0.05, 15 min apart, same side
+        "strike2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+                    "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                    "flip": None},
         "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                   "min_price": 0.15},
     },

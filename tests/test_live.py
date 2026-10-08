@@ -76,7 +76,8 @@ class TestSlots(unittest.TestCase):
                           "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05,
                           "confirm": 0.05, "late_1h": 0.05, "late_blend": 0.05,
                           "min15": 0.05, "ladder2": 0.05,
-                          "fav50": 0.05})
+                          "fav50": 0.05,
+                          "strike_rep": 0.05, "strike2": 0.05})
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
                                                                   "rep_flip10")},
                          {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})
@@ -165,6 +166,17 @@ class TestLadderDB(unittest.TestCase):
         legs = self.cycle(0.50, 0.33, 0.60)                                        # ~0.16
         self.assertEqual([l for l, _, _ in legs], [1, 2, 3])
         self.assertEqual(len(self.cycle(0.50, 0.20, 0.60)), 3)                     # no 4th rung
+
+    def test_kinds_filter(self):
+        books = {"tokY": {"bids": [], "asks": [(0.30, 1000.0)], "ts": 0},
+                 "tokN": {"bids": [], "asks": [(0.95, 1000.0)], "ts": 0}}
+        q = "SELECT count(*) FROM trade.orders WHERE arm='kinds_t'"
+        for kinds, want in (({"strikes"}, 0), ({"updown"}, 1)):        # the spec is up/down
+            cfg = {"min_edge": 0.05, "slots": {"early"}, "kinds": kinds}
+            self.trader._run_arm("paper", "kinds_t", cfg, [(self.spec, 0.60, (0, 0, 1e-4, 1))],
+                                 {self.cid: "tokN"}, books, self.now, None)
+            self.assertEqual(self.conn.execute(q).fetchone()[0], want)
+            self.conn.commit()
 
     def test_min_price_floor(self):
         cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10], "min_price": 0.15}

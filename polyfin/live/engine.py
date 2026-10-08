@@ -307,6 +307,8 @@ class Trader:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
                 continue
+            if "kinds" in cfg and s.kind not in cfg["kinds"]:   # e.g. strikes-only arms
+                continue
             if "max_tau_h" in cfg and s.target_ts - now > cfg["max_tau_h"] * 3600:
                 continue
             if "blend" in cfg:
@@ -406,6 +408,8 @@ class Trader:
         for s, p, f in priced:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
+                continue
+            if "kinds" in cfg and s.kind not in cfg["kinds"]:   # e.g. strikes-only arms
                 continue
             st = repeat_state(conn, mode, arm, s.condition_id, slot)
             if st["n"] >= rp["max_buys"]:
