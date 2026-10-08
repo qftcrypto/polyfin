@@ -289,11 +289,34 @@ class Trader:
             ([s.condition_id for s, _, _ in priced],))}
         conn.commit()
         books = fetch_books([t for s, _, _ in priced for t in (s.token_yes, tokens[s.condition_id])])
+        if self.launch_mode == "paper":                # one writer: the paper process
+            self._log_signals(priced, tokens, books, now)
 
         balance = self.clob.collateral_balance() if mode == "live" else None
         for arm, cfg in C.ARMS[mode].items():
             run = self._run_repeat_arm if "repeat" in cfg else self._run_arm
             balance = run(mode, arm, cfg, priced, tokens, books, now, balance)
+
+    def _log_signals(self, priced, tokens, books, now) -> None:
+        def top(bk, key):
+            return tuple(bk[key][0]) if bk and bk.get(key) else (None, None)
+        rows = []
+        for s, p, f in priced:
+            yb, ys = top(books.get(s.token_yes), "bids")
+            ya, yas = top(books.get(s.token_yes), "asks")
+            na, nas = top(books.get(tokens[s.condition_id]), "asks")
+            ey = p - ya - fee_per_share(ya) if ya else None
+            en = (1 - p) - na - fee_per_share(na) if na else None
+            rows.append((int(now), s.condition_id, s.kind, (s.target_ts - now) / 3600, p, f[1],
+                         yb, ys, ya, yas, na, nas, ey, en))
+        try:
+            self.conn.executemany(
+                "INSERT INTO trade.signals VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT DO NOTHING", rows)
+            self.conn.commit()
+        except Exception as e:                          # a log must never stop trading
+            self.conn.rollback()
+            log.warning("signal log: %s", e)
 
     def _run_arm(self, mode, arm, cfg, priced, tokens, books, now, balance):
         """Enter what this arm's rule allows; returns the balance left (live only)."""
@@ -327,6 +350,8 @@ class Trader:
                     best = (edge, side, tok, ps, bk)
             if best is None or best[0] < rungs[0]:
                 continue                                # nothing reaches even the first rung
+            if "max_edge" in cfg and best[0] >= cfg["max_edge"]:
+                continue                                # band arms: [min_edge, max_edge) only
             held, last_nofill = position_state(conn, mode, arm, s.condition_id, slot)
             if len(held) >= len(rungs):
                 continue

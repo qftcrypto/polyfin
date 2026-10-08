@@ -74,6 +74,24 @@ UPDATE trade.orders SET arm = 'base' WHERE arm IS NULL;
 ALTER TABLE trade.orders ADD COLUMN IF NOT EXISTS leg INTEGER;
 UPDATE trade.orders SET leg = 1 WHERE leg IS NULL;
 
+-- what the trader saw each cycle (2026-10-08): the REAL-TIME model price (with the
+-- data delays live has) against the book it fetched, for every priced market.
+-- Backtests recompute the model from complete bars; this is the record they lack.
+CREATE TABLE IF NOT EXISTS trade.signals (
+    ts           BIGINT NOT NULL,
+    condition_id TEXT   NOT NULL,
+    kind         TEXT,
+    tau_h        REAL,
+    model_p      REAL,               -- P(yes) as priced live
+    x_now        REAL,               -- nowcast log move vs reference
+    yes_bid      REAL, yes_bid_size REAL,
+    yes_ask      REAL, yes_ask_size REAL,
+    no_ask       REAL, no_ask_size  REAL,
+    edge_yes     REAL,               -- p - ask - fee, per side
+    edge_no      REAL,
+    PRIMARY KEY (condition_id, ts)
+);
+
 -- at most one live-or-possibly-live position per market, mode, arm, slot and leg
 DROP INDEX IF EXISTS trade.orders_one_position;
 DROP INDEX IF EXISTS trade.orders_one_position_slot;

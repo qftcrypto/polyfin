@@ -79,7 +79,8 @@ class TestSlots(unittest.TestCase):
                           "confirm": 0.05, "late_1h": 0.05, "late_blend": 0.05,
                           "min15": 0.05, "ladder2": 0.05,
                           "fav50": 0.05,
-                          "strike_rep": 0.05, "strike2": 0.05})
+                          "strike_rep": 0.05, "strike2": 0.05,
+                          "ud_band": 0.05})
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
                                                                   "rep_flip10")},
                          {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})
@@ -146,6 +147,7 @@ class TestLadderDB(unittest.TestCase):
 
     def tearDown(self):
         self.conn.execute("DELETE FROM trade.orders WHERE condition_id = %s", (self.cid,))
+        self.conn.execute("DELETE FROM trade.signals WHERE condition_id = %s", (self.cid,))
         self.conn.commit()
 
     def cycle(self, p, yes_ask, no_ask):
@@ -179,6 +181,28 @@ class TestLadderDB(unittest.TestCase):
                                  {self.cid: "tokN"}, books, self.now, None)
             self.assertEqual(self.conn.execute(q).fetchone()[0], want)
             self.conn.commit()
+
+    def test_max_edge_band(self):
+        cfg = {"min_edge": 0.05, "max_edge": 0.10, "slots": {"early"}}
+        books = lambda ya: {"tokY": {"bids": [], "asks": [(ya, 1000.0)], "ts": 0},
+                            "tokN": {"bids": [], "asks": [(0.95, 1000.0)], "ts": 0}}
+        q = "SELECT count(*) FROM trade.orders WHERE arm='band_t'"
+        for ya, want in ((0.30, 0), (0.42, 1)):         # p 0.50: edge 0.19 skipped, 0.07 taken
+            self.trader._run_arm("paper", "band_t", cfg, [(self.spec, 0.50, (0, 0, 1e-4, 1))],
+                                 {self.cid: "tokN"}, books(ya), self.now, None)
+            self.assertEqual(self.conn.execute(q).fetchone()[0], want)
+            self.conn.commit()
+
+    def test_signal_log(self):
+        books = {"tokY": {"bids": [(0.40, 10.0)], "asks": [(0.42, 20.0)], "ts": 0},
+                 "tokN": {"bids": [], "asks": [(0.60, 30.0)], "ts": 0}}
+        self.trader._log_signals([(self.spec, 0.50, (0, 0.001, 1e-4, 1))], {self.cid: "tokN"},
+                                 books, self.now)
+        r = self.conn.execute("SELECT model_p, yes_ask, no_ask_size, round(edge_yes::numeric, 3) "
+                              "FROM trade.signals WHERE condition_id=%s", (self.cid,)).fetchone()
+        self.conn.commit()
+        self.assertEqual((r[0], r[1], r[2]), (0.5, 0.42, 30.0))
+        self.assertAlmostEqual(float(r[3]), 0.5 - 0.42 - 0.04 * 0.42 * 0.58, places=3)
 
     def test_min_price_floor(self):
         cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10], "min_price": 0.15}

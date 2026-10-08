@@ -75,6 +75,9 @@ ARMS = {
         "strike2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
+        # up/down only, edge in [0.05, 0.10): the one band that came out ~breakeven-positive
+        # (research/ud_threshold.py, 2026-10-08) - kept on record as an option, not a rule
+        "ud_band": {"min_edge": 0.05, "max_edge": 0.10, "slots": {"early"}, "kinds": {"updown"}},
         "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                   "min_price": 0.15},
     },
