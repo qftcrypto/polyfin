@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 
 from polyfin.stage1 import prob_above
-from polyfin.stage2 import fit_blend, logit, prob_vec
+from polyfin.stage2 import Stage2, fit_blend, logit, prob_vec
 
 
 class TestStage2(unittest.TestCase):
@@ -19,6 +19,17 @@ class TestStage2(unittest.TestCase):
         p2 = prob_vec(np.array([0.005]), np.array([1e-4]), np.ones(1), 0.0, 1.5)[0]
         self.assertGreater(p2, p1)
         self.assertEqual(prob_vec(np.array([0.001]), np.array([0.0]), np.ones(1), 0, 1)[0], 1.0)
+
+    def test_strike_b_only_strikes_far_out(self):
+        m = Stage2.__new__(Stage2)
+        m.params = {"gamma": 0.0, "b": 1.0, "sharpen_hours": 0.0, "strike_b": 1.5}
+        m.features = lambda s, t, ex=None: (0.0, 0.01, 1e-4, 1.0)   # +1 sd above
+        far, near = 1000 + 10 * 3600, 1000 + 3600
+        st = lambda kind, tgt: type("S", (), {"kind": kind, "target_ts": tgt})()
+        base = prob_vec(np.array([0.01]), np.array([1e-4]), np.array([1.0]), 0.0, 1.0)[0]
+        self.assertGreater(m.prob(st("strikes", far), 1000), base + 0.01)     # sharpened
+        self.assertAlmostEqual(m.prob(st("strikes", near), 1000), base)      # late: untouched
+        self.assertAlmostEqual(m.prob(st("updown", far), 1000), base)        # up/down: untouched
 
     def test_empty_input(self):
         # the late-sharpening subset is empty when SHARPEN_HOURS = 0 (refit crashed on it)

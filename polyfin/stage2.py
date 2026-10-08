@@ -10,6 +10,12 @@
 3. Sharpening, b.  P = Phi(b * d), d the standardized stage 1 score.  Stage 1 is
    underconfident at the top end (0.8-1.0 predictions came true 94-100%).
 
+4. Strikes sharpening, strike_b (2026-10-08).  For strikes markets more than
+   STRIKE_MIN_TAU_H out, P = Phi(strike_b * d): realized moves ran ~0.86x the
+   model's sd and, on real books, b ~ 1.33 (sd x 0.75) beat the market on 5 of 7
+   held-out days and in every strike series.  Up/down is not touched - the same
+   change made it worse there.
+
 Optionally a market blend, logit P = w1 logit P_model + w2 logit P_market: in
 large model/market disagreements the outcome landed between the two.
 
@@ -44,6 +50,7 @@ SHARPS = np.linspace(0.6, 2.5, 39)
 # Late sharpening is OFF (2026-10-05): on 10 days the fitted factor (b ~ 0.8-0.9) made
 # last-3h Brier worse (0.0761 vs 0.0741 raw; market 0.0751).  0 = never applied.
 SHARPEN_HOURS = 0.0
+STRIKE_MIN_TAU_H = 3.0            # strike_b applies further out than this (late it hurt)
 
 
 class Stage2:
@@ -124,6 +131,8 @@ class Stage2:
         # sharpening helps near the target and hurts further out (see evaluate())
         tau_h = (s.target_ts - t) / 3600
         b = self.params["b"] if tau_h <= self.params.get("sharpen_hours", 99) else 1.0
+        if s.kind == "strikes" and tau_h > STRIKE_MIN_TAU_H:
+            b = self.params.get("strike_b", 1.0)
         return float(prob_vec(np.array([f[1]]), np.array([f[2]]), np.array([f[3]]),
                               self.params["gamma"], b)[0])
 
@@ -188,6 +197,16 @@ def fit_sharp(a, idx, use_nowcast=True, fit_gamma=True, fit_b=True):
     return {"gamma": best[1], "b": best[2]}
 
 
+def fit_strike_b(a, idx, gamma):
+    """b for strikes points idx, minimizing log loss (gamma held fixed)."""
+    return min(SHARPS, key=lambda b: logloss(
+        prob_vec(a["xn"][idx], a["v"][idx], a["R"][idx], gamma, b), a["y"][idx]).mean())
+
+
+def strike_rows(a):
+    return (a["kind"] == "strikes") & (a["tau"] > STRIKE_MIN_TAU_H)
+
+
 def fit_blend(pmodel, pmkt, y):
     """Logistic regression without intercept on (logit p_model, logit p_market)."""
     X = np.column_stack([logit(pmodel), logit(pmkt)])
@@ -223,6 +242,11 @@ def evaluate(a):
         near = test & (a["tau"] <= SHARPEN_HOURS)
         out["sharp<=3h"][test] = prob_vec(a["xn"][test], a["v"][test], a["R"][test], pf["gamma"], 1.0)
         out["sharp<=3h"][near] = full(near)
+        far_k = test & strike_rows(a)                    # the live model: strikes sharpening
+        if far_k.any():
+            sb = fit_strike_b(a, train & strike_rows(a), pf["gamma"])
+            out["sharp<=3h"][far_k] = prob_vec(a["xn"][far_k], a["v"][far_k], a["R"][far_k],
+                                               pf["gamma"], sb)
         w = fit_blend(full(train), a["pm"][train], a["y"][train])
         out["+blend"][test] = 1 / (1 + np.exp(-(w[0] * logit(full(test)) + w[1] * logit(a["pm"][test]))))
         fits.append((d, pv["gamma"], pf["gamma"], pf["b"], w))
@@ -274,6 +298,7 @@ def main() -> None:
               else {"gamma": 0.0, "b": 1.0})
     params["gamma"] = fit_sharp(a, np.ones_like(a["y"], dtype=bool), fit_b=False)["gamma"]
     params["sharpen_hours"] = SHARPEN_HOURS
+    params["strike_b"] = float(fit_strike_b(a, strike_rows(a), params["gamma"]))
     pfull = prob_vec(a["xn"], a["v"], a["R"], params["gamma"], params["b"])
     params["blend"] = [float(x) for x in fit_blend(pfull, a["pm"], a["y"])]
     params["fitted_at"] = int(time.time())
