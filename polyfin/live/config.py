@@ -79,9 +79,12 @@ ARMS = {
                   "min_price": 0.15},
     },
     "live": {
-        # 2026-10-02: base -> two-buy ladder (research/ladder.py, 8 days; the second
-        # buy paid at least as well as the first on every price source)
-        "ladder2": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10]},
+        # 2026-10-08 (user): strikes only, 2 buys at edge >= 0.05, 15 min apart, same side,
+        # with the strikes-sharpened model (research/strike_repeat.py).  Replaces ladder2
+        # (all market types; lost 10/2-10/6), which keeps running as a paper arm.
+        "strike2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+                    "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                    "flip": None},
     },
 }
 

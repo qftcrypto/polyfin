@@ -65,10 +65,12 @@ class TestSlots(unittest.TestCase):
                 "slots": {"early": {"orders_today": early[0], "open_usd": early[1]},
                           "late": {"orders_today": late[0], "open_usd": late[1]}}}
 
-    def test_live_is_base_early_only(self):
+    def test_live_is_strike2_early_only(self):
         from polyfin.live import config as C
-        self.assertEqual(C.ARMS["live"], {"ladder2": {"min_edge": 0.05, "slots": {"early"},
-                                                      "rungs": [0.05, 0.10]}})
+        self.assertEqual(C.ARMS["live"], {"strike2": {
+            "min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+            "repeat": {"spacing_s": 900, "max_buys": 2, "market_cap_usd": 10.0}, "flip": None}})
+        self.assertEqual(C.ARMS["live"]["strike2"], C.ARMS["paper"]["strike2"])   # paper twin
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(C.ARMS["paper"]["base"]["slots"], {"early", "late"})
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},

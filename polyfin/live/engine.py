@@ -451,8 +451,17 @@ class Trader:
                 continue
             if blocked(risk, mode, shares * lim, slot):
                 continue
+            if mode == "live":                             # the wallet is the limit
+                cost = shares * lim * 1.02                 # + fee headroom
+                if balance is None or balance < cost:
+                    log.info("[%s] blocked (balance %s < $%.2f): %s %s edge %.3f", arm,
+                             "unknown" if balance is None else f"${balance:.2f}", cost,
+                             s.series_slug, side, edge)
+                    continue
             self._enter(mode, arm, s, side, tok, ps, edge, lim, shares, bk, f, now, slot,
                         st["next_leg"])
+            if balance is not None:
+                balance -= shares * lim * 1.02
             entered += 1
         risk = risk_state(conn, mode, time.time(), arm)
         log.info("%s/%s: %d markets priced, %d entries | today %d orders, open $%.2f, pnl $%+.2f",
