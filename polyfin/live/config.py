@@ -31,7 +31,6 @@ REPEAT = {"spacing_s": 15 * 60, "max_buys": 10, "market_cap_usd": 30.0}
 # real book prices edge 0.05-0.10 broke even, 0.10+ was positive - 2 days only).
 ARMS = {
     "paper": {
-        "base": {"min_edge": 0.05, "slots": {"early", "late"}},
         "e10": {"min_edge": 0.10, "slots": {"early"}},
         "e15": {"min_edge": 0.15, "slots": {"early"}},
         # scale-in: leg 1 at 0.05 on the better side, then add on THAT side when
@@ -46,11 +45,9 @@ ARMS = {
         "rep_hold": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": None},
         "rep_flip": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.05},
         "rep_flip10": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.10},
-        # live ladder2 + confirmation: a signal must still hold >= confirm_s after first seen,
-        # on a later cycle with fresher bars (recorder fetches every 120s).  research/race.py:
-        # the bought side fell ~1.6-2.4c in the minute after entry (stale inputs).
-        "confirm": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
-                    "confirm_s": 120},
+        # retired 2026-10-08 (operator): base (the original single-entry rule, both slots)
+        # and confirm (ladder2 + 120s confirmation: -0.1pp/share, no value).  Their records
+        # stay in trade.orders; the engine still supports confirm_s.
         # Late-slot variants (2026-10-02).  Late, the model is worse than the market 1-3h
         # out and overconfident (disagreements: model 0.641, market 0.501, realized 0.532)
         # but better in the last hour.  Compared with base's late slot.

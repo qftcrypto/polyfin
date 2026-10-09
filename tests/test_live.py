@@ -72,11 +72,10 @@ class TestSlots(unittest.TestCase):
             "repeat": {"spacing_s": 900, "max_buys": 2, "market_cap_usd": 10.0}, "flip": None}})
         self.assertEqual(C.ARMS["live"]["strike2"], C.ARMS["paper"]["strike2"])   # paper twin
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
-        self.assertEqual(C.ARMS["paper"]["base"]["slots"], {"early", "late"})
         self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
-                         {"base": 0.05, "e10": 0.10, "e15": 0.15, "ladder": 0.05,
+                         {"e10": 0.10, "e15": 0.15, "ladder": 0.05,
                           "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05,
-                          "confirm": 0.05, "late_1h": 0.05, "late_blend": 0.05,
+                          "late_1h": 0.05, "late_blend": 0.05,
                           "min15": 0.05, "ladder2": 0.05,
                           "fav50": 0.05,
                           "strike_rep": 0.05, "strike2": 0.05,
