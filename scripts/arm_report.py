@@ -106,6 +106,44 @@ def describe(cfg) -> str:
     return ", ".join(parts)
 
 
+def _hm(minutes):
+    minutes %= 24 * 60
+    return "%02d:%02d" % (minutes // 60, minutes % 60)
+
+
+def window(cfg, settle) -> str:
+    """When the arm may fire, ET: per settlement time of the market types it trades.
+    settle = {kind: sorted settlement times as minutes after ET midnight}."""
+    kinds = cfg.get("kinds") or [k for k, _ in KINDS]
+    late, lo_tau = C.LATE_WINDOW_H, C.MIN_TAU_S / 3600
+    if cfg["slots"] == {"early"}:
+        span = lambda m: "from %dh before to %s" % (C.MAX_TAU_H, _hm(m - 60 * late))
+    elif cfg["slots"] == {"late"}:
+        hi = min(cfg.get("max_tau_h", late), late)
+        span = lambda m: "%s-%s" % (_hm(m - 60 * hi), _hm(m - 60 * lo_tau))
+    else:
+        span = lambda m: "from %dh before to %s" % (C.MAX_TAU_H, _hm(m - 60 * lo_tau))
+    by = defaultdict(list)                      # settlement time -> market types settling then
+    for k in kinds:
+        for m in settle.get(k, ()):
+            by[m].append(dict(KINDS).get(k, k))
+    return "; ".join("%s settling %s: %s" % ("+".join(ks), _hm(m), span(m))
+                     for m, ks in sorted(by.items()))
+
+
+def fired(F, days) -> str:
+    """When it actually fired (ET hour of each fill), over `days`, in 3-hour bins."""
+    sel = [o for o in F if o["day"] in days] or F
+    if not sel:
+        return "no fills yet"
+    n = defaultdict(int)
+    for o in sel:
+        n[dt.datetime.fromtimestamp(o["created_at"], ET).hour // 3] += 1
+    tot = sum(n.values())
+    return ", ".join("%02d-%02dh %d%%" % (3 * b, 3 * b + 3, round(100 * c / tot))
+                     for b, c in sorted(n.items()) if c) + " (%d fills)" % tot
+
+
 def summarise(F):
     """Fills, wins, per-share edge after fee in pp (+- s.e.), P&L and cost, settled fills only."""
     S = [f for f in F if f["pnl"] is not None]
@@ -124,6 +162,11 @@ def run(orders, now):
     for o in orders:
         o["day"] = et_day(o["target_ts"])
     settled_days = sorted({o["day"] for o in orders if o["pnl"] is not None})
+    settle = defaultdict(set)                   # kind -> settlement times seen (minutes, ET)
+    for o in orders:
+        t = dt.datetime.fromtimestamp(o["target_ts"], ET)
+        settle[o["kind"]].add(t.hour * 60 + t.minute)
+    settle = {k: sorted(v) for k, v in settle.items()}
     units = defaultdict(list)                   # (mode, arm) -> fills
     for o in orders:
         units[(o["mode"], o["arm"])].append(o)
@@ -134,6 +177,8 @@ def run(orders, now):
             continue
         section, status = ("live", "LIVE") if mode == "live" else ("paper", "paper")
         desc = describe(cfg)
+        fires = window(cfg, settle)
+        fired_ = fired(F, set(settled_days[-7:]))
         started = min(o["created_at"] for o in F)
         twin = units.get(("paper", arm)) if mode == "live" else None
         for name, n in PERIODS:
@@ -146,6 +191,7 @@ def run(orders, now):
                                     started > dt.datetime.combine(days[0], dt.time(), ET).timestamp())
             sel = [o for o in F if o["day"] in set(days)]
             base = dict(section=section, mode=mode, arm=arm, status=status, desc=desc, period=name,
+                        fires=fires, fired=fired_,
                         na=na, days=(days[0], days[-1]), started=started)
             out.append(dict(base, kind="all", **summarise(sel)))
             for k, _ in KINDS:
@@ -257,9 +303,12 @@ def render(rows, path, meta: dict):
                     _cell(d.get(("all", p))), _days(d.get(("all", p)), p),
                     "".join('<div class="sub">%s %s</div>' % (lab, _cell(d.get((k, p)))) for k, lab in subs))
                 for p, _ in PERIODS)
-            trs.append('<tr><th scope="row">%s<div class="sub">%s</div><div class="sub rule">%s</div></th>'
+            trs.append('<tr><th scope="row">%s<div class="sub">%s</div><div class="sub rule">%s</div>'
+                       '<div class="sub rule"><b>Fires (ET):</b> %s</div>'
+                       '<div class="sub rule"><b>Fired, last 7 trading days:</b> %s</div></th>'
                        '%s<td class="%s">%s</td></tr>' % (
                            html.escape(key[1]), html.escape(head["status"]), html.escape(head["desc"]),
+                           html.escape(head["fires"]), html.escape(head["fired"]),
                            cells, vc, html.escape(v)))
         parts.append('<section><h2>%s</h2><div class="wrap"><table><thead><tr><th>Arm</th>%s<th>Verdict</th>'
                      '</tr></thead><tbody>%s</tbody></table></div></section>' % (
@@ -285,7 +334,7 @@ h2{font-size:16px;margin:28px 0 8px}.meta{color:var(--muted);margin:0 0 16px}
 .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
 table{border-collapse:collapse;width:100%;min-width:1180px}th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
 thead th{font-weight:600;color:var(--muted);font-size:12px}tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
-.sub{color:var(--muted);font-size:12px;margin-top:2px}.rule{font-weight:400;max-width:190px;line-height:1.35}.muted{color:var(--muted)}.pos{color:var(--pos)}.neg{color:var(--neg)}
+.sub{color:var(--muted);font-size:12px;margin-top:2px}.rule{font-weight:400;max-width:260px;line-height:1.35}.muted{color:var(--muted)}.pos{color:var(--pos)}.neg{color:var(--neg)}
 td.good{color:var(--pos);font-weight:600}td.bad{color:var(--neg);font-weight:600}ul{color:var(--muted);padding-left:18px}
 </style></head><body><main><h1>Polyfin arm report</h1><p class="meta">{{META}}</p>{{BODY}}
 <h2>How to read it</h2><ul>{{NOTES}}</ul></main></body></html>"""
@@ -340,6 +389,10 @@ def main():
             "Verdict (from the 7- and 14-day windows, N/A until the arm has run through both): "
             "'live, losing over 7d' = the live arm lost money over its last 7 trading days.",
             "Rules are read from polyfin/live/config.py on the laptop - keep it at the deployed commit.",
+            "Fires (ET): when the rule allows entries, per settlement time of the market types the arm "
+            "trades (settlement times as seen in the record). Markets are listed about a day ahead, so "
+            "'from 36h before' in practice starts at listing. Fired: the ET hour of the arm's actual fills, "
+            "in 3-hour bins, over the last 7 trading days (all history if none).",
         ]
         path = os.path.join(OUT, "arm_report.html")
         render(rows, path, dict(line=line, notes=notes))
