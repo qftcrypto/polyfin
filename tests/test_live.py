@@ -7,6 +7,12 @@ from polyfin.live.fees import fee_per_share, taker_fee
 from polyfin.live.sizing import limit_price, shares_for
 
 
+
+# retired arms whose engine paths are still tested
+RETIRED = {"late_blend": {"min_edge": 0.05, "slots": {"late"}, "blend": (0.19, 0.92)},
+           "rep_flip": {"min_edge": 0.05, "slots": {"early"}, "flip": 0.05,
+                        "repeat": {"spacing_s": 900, "max_buys": 10, "market_cap_usd": 30.0}}}
+
 class TestSizing(unittest.TestCase):
     def test_limit_keeps_the_edge_after_fee(self):
         L = limit_price(0.90, 0.05)
@@ -76,10 +82,8 @@ class TestSlots(unittest.TestCase):
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
                           "strike_rep", "strike2", "ud_band"})
         self.assertTrue(all(c["min_edge"] == 0.05 for c in C.ARMS["paper"].values()))
-        self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
-                                                                  "rep_flip10")},
-                         {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})
-        self.assertEqual(C.ARMS["paper"]["ladder"]["rungs"], [0.05, 0.10, 0.15])
+        self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
+                         {"rep_hold": None, "rep_flip10": 0.10})
 
     def test_paper_has_no_caps_live_does(self):
         from polyfin.live.engine import blocked
@@ -224,7 +228,7 @@ class TestRepeatDB(TestLadderDB):
         from polyfin.live import config as C
         books = {"tokY": {"bids": [], "asks": [(yes_ask, 1000.0)], "ts": 0},
                  "tokN": {"bids": [], "asks": [(no_ask, 1000.0)], "ts": 0}}
-        self.trader._run_repeat_arm("paper", arm, C.ARMS["paper"][arm],
+        self.trader._run_repeat_arm("paper", arm, C.ARMS["paper"].get(arm, RETIRED.get(arm)),
                                     [(self.spec, p, (0, 0, 1e-4, 1))], {self.cid: "tokN"},
                                     books, at, None)
         return [r[0] for r in self.conn.execute(
@@ -311,10 +315,6 @@ class TestConfirmAndRefreshDB(TestLadderDB):
             self.conn.execute("DELETE FROM trade.orders WHERE condition_id=%s", (self.cid,))
             self.conn.commit()
 
-
-
-# retired arms whose engine paths are still tested
-RETIRED = {"late_blend": {"min_edge": 0.05, "slots": {"late"}, "blend": (0.19, 0.92)}}
 
 
 class TestLateArmsDB(TestLadderDB):
