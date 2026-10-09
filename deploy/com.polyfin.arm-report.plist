@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Nightly arm report on the LAPTOP (scripts/arm_report.py): every live and paper
+     arm's forward record over the last 1/2/3/7/14 trading days and all history ->
+     data/reports/arm_report.html and a desktop notification. 20:30 local (ET),
+     after the 16:00-18:00 settlements; launchd runs a missed slot on wake. Install:
+       cp deploy/com.polyfin.arm-report.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.polyfin.arm-report.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.polyfin.arm-report</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/mm/MyDev/MyCode/polytrade/polyfin/.venv/bin/python</string>
+    <string>/Users/mm/MyDev/MyCode/polytrade/polyfin/scripts/arm_report.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/mm/MyDev/MyCode/polytrade/polyfin</string>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>Nice</key><integer>5</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/mm/Library/Logs/polyfin-arm-report.log</string>
+  <key>StandardErrorPath</key><string>/Users/mm/Library/Logs/polyfin-arm-report.log</string>
+</dict>
+</plist>
