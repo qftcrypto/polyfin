@@ -2,8 +2,8 @@
 """Nightly arm report, on the laptop (launchd: deploy/com.polyfin.arm-report.plist).
 
 The polycrypto zone report's template (polycrypto/scripts/zone_report.py) for
-polyfin: every arm in polyfin/live/config.py ARMS - live first, then paper, then
-retired arms that still have a record - with its FORWARD record (actual live and
+polyfin: every arm in polyfin/live/config.py ARMS - live first, then paper; arms no
+longer configured are not reported (operator 2026-10-08) - with its FORWARD record (actual live and
 paper fills, settled) over the last 1, 2, 3, 7 and 14 trading days with
 settlements and all history.  -> data/reports/arm_report.html (+ a dated copy),
 the local `arm_report` table, and a desktop notification.
@@ -130,11 +130,10 @@ def run(orders, now):
     out = []
     for (mode, arm), F in units.items():
         cfg = C.ARMS[mode].get(arm)
-        if mode == "live":
-            section, status = ("live", "LIVE") if cfg else ("retired", "retired live arm")
-        else:
-            section, status = ("paper", "paper") if cfg else ("retired", "retired paper arm")
-        desc = describe(cfg) if cfg else "no longer configured"
+        if cfg is None:                         # retired arm: not tracked
+            continue
+        section, status = ("live", "LIVE") if mode == "live" else ("paper", "paper")
+        desc = describe(cfg)
         started = min(o["created_at"] for o in F)
         twin = units.get(("paper", arm)) if mode == "live" else None
         for name, n in PERIODS:
@@ -232,7 +231,7 @@ def _days(r, period):
     return '<div class="sub">%s</div>' % lab
 
 
-SECTIONS = (("live", "Live (real money)"), ("paper", "Paper arms"), ("retired", "Retired arms"))
+SECTIONS = (("live", "Live (real money)"), ("paper", "Paper arms"))
 
 
 def render(rows, path, meta: dict):
