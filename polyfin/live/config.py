@@ -31,52 +31,39 @@ REPEAT = {"spacing_s": 15 * 60, "max_buys": 10, "market_cap_usd": 30.0}
 # real book prices edge 0.05-0.10 broke even, 0.10+ was positive - 2 days only).
 ARMS = {
     "paper": {
-        "e10": {"min_edge": 0.10, "slots": {"early"}},
-        "e15": {"min_edge": 0.15, "slots": {"early"}},
-        # scale-in: leg 1 at 0.05 on the better side, then add on THAT side when
-        # the edge widens to 0.10, then 0.15 (research/ladder.py: add-on legs
-        # paid at least as well as the first, 2026-10-01)
-        "ladder": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10, 0.15]},
+        # Retired 2026-10-08 (operator): base, confirm, e10, e15, ladder, ladder2, rep_flip and
+        # late_blend.  Their records stay in trade.orders (the 10/22 check reads them); the
+        # engine still supports rungs, confirm_s and blend.
         # repeat buying (research/repeat.py, research/hedge.py): another $3 every
         # time an edge >= min_edge persists, >= 15 min apart, <= 10 buys and <= $30
         # cost per market.  `flip` = edge the OTHER side (vs the latest buy) needs
         # before switching to it; None = never switch.  A flip therefore always
         # needs the model's agreement, never the market move alone.
         "rep_hold": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": None},
-        "rep_flip": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.05},
         "rep_flip10": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.10},
-        # retired 2026-10-08 (operator): base (the original single-entry rule, both slots)
-        # and confirm (ladder2 + 120s confirmation: -0.1pp/share, no value).  Their records
-        # stay in trade.orders; the engine still supports confirm_s.
-        # Late-slot variants (2026-10-02).  Late, the model is worse than the market 1-3h
-        # out and overconfident (disagreements: model 0.641, market 0.501, realized 0.532)
-        # but better in the last hour.  Compared with base's late slot.
+        # Late slot, last hour only (2026-10-02): late, the model is worse than the market
+        # 1-3h out but better in the last hour.
         "late_1h": {"min_edge": 0.05, "slots": {"late"}, "max_tau_h": 1.0},
-        # logit P = w_model logit(model) + w_market logit(market mid): weights fitted on
-        # late points of 9 days (best late Brier 0.0752 vs model 0.0787 / market 0.0763)
-        "late_blend": {"min_edge": 0.05, "slots": {"late"}, "blend": (0.19, 0.92)},
-        # live's ladder2 with a 0.15 price floor (research/dust.py, 2026-10-06: asks 0.05-0.15
-        # lost on both price sources - the model overstates long shots there)
-        # shadow of the live rule, so it keeps being measured while live is off
-        "ladder2": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10]},
-        # live's ladder2 on the favourite side only (ask >= 0.50), 2026-10-08: real-book
-        # backtest +5.6%, 6/7 days, +$1.90 without the best 5 markets; forward fills at
-        # >= 0.50 so far about breakeven (live -8.4%, paper +0.8%) - measured here cleanly
+        # two buys (edge 0.05, then 0.10) on the favourite side only (ask >= 0.50), 2026-10-08:
+        # real-book backtest +5.6%, 6/7 days, +$1.90 without the best 5 markets; forward fills
+        # at >= 0.50 so far about breakeven (live -8.4%, paper +0.8%) - measured here cleanly
         "fav50": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                   "min_price": 0.50},
+        # the same two buys with a 0.15 price floor (research/dust.py, 2026-10-06: asks
+        # 0.05-0.15 lost on both price sources - the model overstates long shots there)
+        "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
+                  "min_price": 0.15},
         # strikes only, with the strikes-sharpened model (2026-10-08, research/strike_repeat.py:
         # real books, 7 days, ~+14-15% per $ at any repeat rate, 6/7 days positive)
         "strike_rep": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                        "repeat": REPEAT, "flip": None},
-        # the live candidate: 2 buys at edge >= 0.05, 15 min apart, same side
+        # paper twin of the live rule: 2 buys at edge >= 0.05, 15 min apart, same side
         "strike2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
         # up/down only, edge in [0.05, 0.10): the one band that came out ~breakeven-positive
         # (research/ud_threshold.py, 2026-10-08) - kept on record as an option, not a rule
         "ud_band": {"min_edge": 0.05, "max_edge": 0.10, "slots": {"early"}, "kinds": {"updown"}},
-        "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
-                  "min_price": 0.15},
     },
     "live": {
         # 2026-10-08 (user): strikes only, 2 buys at edge >= 0.05, 15 min apart, same side,

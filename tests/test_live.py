@@ -72,14 +72,10 @@ class TestSlots(unittest.TestCase):
             "repeat": {"spacing_s": 900, "max_buys": 2, "market_cap_usd": 10.0}, "flip": None}})
         self.assertEqual(C.ARMS["live"]["strike2"], C.ARMS["paper"]["strike2"])   # paper twin
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
-        self.assertEqual({a: c["min_edge"] for a, c in C.ARMS["paper"].items()},
-                         {"e10": 0.10, "e15": 0.15, "ladder": 0.05,
-                          "rep_hold": 0.05, "rep_flip": 0.05, "rep_flip10": 0.05,
-                          "late_1h": 0.05, "late_blend": 0.05,
-                          "min15": 0.05, "ladder2": 0.05,
-                          "fav50": 0.05,
-                          "strike_rep": 0.05, "strike2": 0.05,
-                          "ud_band": 0.05})
+        self.assertEqual(set(C.ARMS["paper"]),
+                         {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
+                          "strike_rep", "strike2", "ud_band"})
+        self.assertTrue(all(c["min_edge"] == 0.05 for c in C.ARMS["paper"].values()))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip",
                                                                   "rep_flip10")},
                          {"rep_hold": None, "rep_flip": 0.05, "rep_flip10": 0.10})
@@ -317,6 +313,10 @@ class TestConfirmAndRefreshDB(TestLadderDB):
 
 
 
+# retired arms whose engine paths are still tested
+RETIRED = {"late_blend": {"min_edge": 0.05, "slots": {"late"}, "blend": (0.19, 0.92)}}
+
+
 class TestLateArmsDB(TestLadderDB):
     def run_late(self, arm, p, yes_bid, yes_ask, no_ask, tau_h):
         from polyfin.live import config as C
@@ -325,7 +325,7 @@ class TestLateArmsDB(TestLadderDB):
                     int(self.now - 3600), None, None, int(self.now + tau_h * 3600))
         books = {"tokY": {"bids": [(yes_bid, 100.0)], "asks": [(yes_ask, 1000.0)], "ts": 0},
                  "tokN": {"bids": [], "asks": [(no_ask, 1000.0)], "ts": 0}}
-        self.trader._run_arm("paper", arm, C.ARMS["paper"][arm], [(spec, p, (0, 0, 1e-4, 1))],
+        self.trader._run_arm("paper", arm, C.ARMS["paper"].get(arm, RETIRED.get(arm)), [(spec, p, (0, 0, 1e-4, 1))],
                              {self.cid: "tokN"}, books, self.now, None)
         return self.conn.execute("SELECT side FROM trade.orders WHERE condition_id=%s AND arm=%s",
                                  (self.cid, arm)).fetchall()
