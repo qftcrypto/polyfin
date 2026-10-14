@@ -13,7 +13,7 @@ import argparse
 import logging
 import time
 
-from . import config, polymarket, yahoo
+from . import config, hyperliquid, polymarket, yahoo
 from .db import connect
 
 log = logging.getLogger("recorder")
@@ -36,6 +36,7 @@ def main() -> None:
         ("closes", config.CLOSES_EVERY, lambda: yahoo.record_closes(conn, symbols)),
         ("history", config.HISTORY_EVERY, lambda: polymarket.record_history(conn)),
         ("books", config.BOOKS_EVERY, lambda: polymarket.record_books(conn)),
+        ("perps", config.PERPS_EVERY, lambda: hyperliquid.record_perps(conn)),
     ]
     due = {name: 0.0 for name, _, _ in tasks}
     log.info("series=%d  symbols=%d", len(config.SERIES), len(symbols))

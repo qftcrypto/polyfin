@@ -80,7 +80,7 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(set(C.ARMS["paper"]),
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
-                          "strike_rep", "strike2", "ud_band", "spymeta2"})
+                          "strike_rep", "strike2", "ud_band", "spymeta2", "strike2_agree"})
         self.assertTrue(all(c["min_edge"] == 0.05 for c in C.ARMS["paper"].values()))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
                          {"rep_hold": None, "rep_flip10": 0.10})
@@ -215,6 +215,24 @@ class TestLadderDB(unittest.TestCase):
         self.assertTrue(t._eligible({"min_edge": 0.05, "slots": {"early"}}, self.spec))
         self.assertFalse(t._eligible(dict(cfg, series={"other"}), self.spec))
         del t.liquid, t.volume
+
+    def test_ladder_centres_and_agreement(self):
+        from polyfin.live.engine import ladder_centres
+        from polyfin.stage1 import Spec
+        mk = lambda k, tok: Spec("c%d" % k, "wti-x", "strikes", "CL=F", tok, 100, 0, float(k), None, 100)
+        priced = [(mk(90, "t90"), 0.80, None), (mk(91, "t91"), 0.60, None), (mk(92, "t92"), 0.40, None),
+                  (mk(93, "t93"), 0.20, None)]
+        bk = lambda m: {"bids": [(m - 0.01, 10)], "asks": [(m + 0.01, 10)]}
+        books = {"t90": bk(0.90), "t91": bk(0.70), "t92": bk(0.50), "t93": bk(0.30)}
+        c = ladder_centres(priced, books)[("wti-x", 100)]
+        self.assertAlmostEqual(c[0], 91.5)                    # model crosses 0.5 at 91.5
+        self.assertAlmostEqual(c[1], 92.0)                    # market mids cross 0.5 at 92
+        t = self.trader
+        t.centres = {("wti-x", 100): c}
+        cfg = {"min_edge": 0.05, "slots": {"early"}, "centre_tol": 0.50}
+        self.assertTrue(t._eligible(cfg, priced[0][0]))
+        self.assertFalse(t._eligible(dict(cfg, centre_tol=0.25), priced[0][0]))
+        del t.centres
 
     def test_min_price_floor(self):
         cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10], "min_price": 0.15}

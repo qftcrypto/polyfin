@@ -55,6 +55,36 @@ def liquid_series(conn) -> set[str]:
     return {s for s, v in rows if v >= C.MIN_SERIES_VOLUME} - C.EXCLUDE_SERIES
 
 
+def ladder_centre(ks, ps):
+    """Strike where a decreasing P(above K) curve crosses 0.5 (linear interpolation)."""
+    for i in range(len(ks) - 1):
+        a, b = ps[i], ps[i + 1]
+        if a >= 0.5 >= b and a != b:
+            return ks[i] + (a - 0.5) / (a - b) * (ks[i + 1] - ks[i])
+    return None
+
+
+def ladder_centres(priced, books) -> dict:
+    """(series, target_ts) -> (model centre, market centre) for strike ladders: the price
+    where the model's P(above K) and the book mids cross 0.5 (research/wti_width.py)."""
+    lad = {}
+    for s, p, _ in priced:
+        if s.kind == "strikes" and s.strike is not None:
+            bk = books.get(s.token_yes) or {}
+            mid = ((bk["bids"][0][0] + bk["asks"][0][0]) / 2
+                   if bk.get("bids") and bk.get("asks") else None)
+            lad.setdefault((s.series_slug, s.target_ts), []).append((float(s.strike), p, mid))
+    out = {}
+    for key, rows in lad.items():
+        rows.sort()
+        cp = ladder_centre([r[0] for r in rows], [r[1] for r in rows])
+        mk = [r for r in rows if r[2] is not None]
+        cm = ladder_centre([r[0] for r in mk], [r[2] for r in mk]) if len(mk) >= 3 else None
+        if cp is not None and cm is not None:
+            out[key] = (cp, cm)
+    return out
+
+
 def fetch_books(tokens: list[str]) -> dict:
     """token -> {"bids": [(p, size)] best first, "asks": [...], "ts": int}"""
     out = {}
@@ -254,8 +284,8 @@ class Trader:
             return
         # recorder liveness: the newest bar of ANY symbol.  Not the futures -
         # Yahoo serves CME bars 10-20 minutes late, so they always look stale.
-        newest = conn.execute("SELECT MAX(ts) FROM bars WHERE ts > %s",
-                              (int(now) - 6 * 3600,)).fetchone()[0]
+        newest = conn.execute("SELECT MAX(ts) FROM bars WHERE ts > %s AND symbol NOT LIKE 'HL:%%'",
+                              (int(now) - 6 * 3600,)).fetchone()[0]   # 24/7 perps would hide a dead feed
         conn.commit()
         if newest is None or now - newest > C.MAX_BARS_AGE_S:
             log.warning("bars stale (newest %s) - recorder down? no entries",
@@ -296,6 +326,7 @@ class Trader:
             ([s.condition_id for s, _, _ in priced],))}
         conn.commit()
         books = fetch_books([t for s, _, _ in priced for t in (s.token_yes, tokens[s.condition_id])])
+        self.centres = ladder_centres(priced, books)
         if self.launch_mode == "paper":                # one writer: the paper process
             self._log_signals(priced, tokens, books, now)
 
@@ -310,6 +341,10 @@ class Trader:
         so far; without `series`, only liquid series."""
         if "kinds" in cfg and s.kind not in cfg["kinds"]:
             return False
+        if "centre_tol" in cfg:                     # strikes: model and market centres agree
+            cm = getattr(self, "centres", {}).get((s.series_slug, s.target_ts))
+            if cm is None or abs(cm[0] - cm[1]) > cfg["centre_tol"]:
+                return False
         if "series" in cfg:
             return (s.series_slug in cfg["series"] and
                     getattr(self, "volume", {}).get(s.condition_id, 0.0) >= cfg.get("min_mkt_volume", 0.0))

@@ -61,6 +61,14 @@ ARMS = {
         "strike2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
+        # strike2 + centre agreement (2026-10-14, research/wti_width.py): trade a strike ladder
+        # only while the model's and the market's 0.5 points are within $0.50 - skips the
+        # directional days where the market's centre was right (10/12).  0.50 was the
+        # cutoff fixed before the sweep (books 0.25-1.50 all beat no filter, forward fragile)
+        "strike2_agree": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+                          "centre_tol": 0.50,
+                          "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                          "flip": None},
         # strike2's rule on SPY and META strikes only (2026-10-14): those series are below
         # MIN_SERIES_VOLUME (median $351 / $212), so no other arm ever trades them; here a
         # market qualifies on its own volume so far (>= $500), as the backtest kept markets

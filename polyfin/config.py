@@ -105,6 +105,7 @@ CLOSES_EVERY = 60            # spark: 45 symbols in 3 requests -> 180 req/h, 60s
 BARS_EVERY = 600             # full OHLCV bars, one request per symbol -> 270 req/h
                              # (Yahoo's unofficial limit is ~2,000-2,500 req/h per IP)
 BOOKS_EVERY = 30
+PERPS_EVERY = 60             # Hyperliquid perp candles (polyfin/hyperliquid.py): 1 request
 HISTORY_EVERY = 600
 DISCOVERY_EVERY = 900
 
