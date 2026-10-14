@@ -136,7 +136,8 @@ def report(title, moments):
     print("           width-only:" + " ".join(f"{f(d)}:{b.get(d, 0):+.0f}" for d in days))
 
 
-def main() -> None:
+def load_moments():
+    """(BOOKS moments, SIGNALS moments): {(target_ts, t): {strike: (cid, p, yes_ladder, no_ladder, y)}}."""
     conn = connect()
     specs = [s for s in load_specs(conn) if s.series_slug == SERIES and s.outcome is not None]
     sp = {s.condition_id: s for s in specs}
@@ -155,7 +156,6 @@ def main() -> None:
         j = bisect_right(ts, t) - 1
         if j >= 0 and t - ts[j] <= 60:
             moments[(s.target_ts, t // 60 * 60)][s.strike] = (s.condition_id, p[i], v[j][0], v[j][1], a["y"][i])
-    report(f"BOOKS: WTI strikes, LODO model, recorded books ({len({k[0] for k in moments})} days)", moments)
     # SIGNALS: the bot's real-time model and the book it fetched (top of book only)
     rows = conn.execute(
         "SELECT s.ts, s.condition_id, s.model_p, s.yes_bid, s.yes_bid_size, s.yes_ask, s.yes_ask_size, "
@@ -168,6 +168,12 @@ def main() -> None:
         if s is None or ya is None or na is None:
             continue
         sig[(s.target_ts, ts // 30 * 30)][s.strike] = (cid, mp, [(ya, yas or 0)], [(na, nas or 0)], s.outcome)
+    return moments, sig
+
+
+def main() -> None:
+    moments, sig = load_moments()
+    report(f"BOOKS: WTI strikes, LODO model, recorded books ({len({k[0] for k in moments})} days)", moments)
     report(f"SIGNALS: forward, real-time model ({len({k[0] for k in sig})} days)", sig)
 
 
