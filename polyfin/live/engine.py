@@ -264,9 +264,16 @@ class Trader:
 
         self._reload_params()
         liquid = liquid_series(conn)
+        # arms that name their series (e.g. spymeta2) also get those series priced,
+        # liquid or not; every other arm still trades liquid series only
+        extra = set().union(*(cfg.get("series", ()) for arms in C.ARMS.values() for cfg in arms.values()))
+        self.liquid = liquid
         specs = [s for s in load_specs(conn)
-                 if s.outcome is None and s.series_slug in liquid and s.end_ts > now
-                 and C.MIN_TAU_S <= s.target_ts - now <= C.MAX_TAU_H * 3600]
+                 if s.outcome is None and (s.series_slug in liquid or s.series_slug in extra)
+                 and s.end_ts > now and C.MIN_TAU_S <= s.target_ts - now <= C.MAX_TAU_H * 3600]
+        self.volume = {r[0]: float(r[1] or 0) for r in conn.execute(
+            "SELECT condition_id, COALESCE((raw->>'volume')::float, 0) FROM markets "
+            "WHERE condition_id = ANY(%s)", ([s.condition_id for s in specs],))}
         conn.commit()
         model = Stage2(conn, self.params, betas=self.betas)
         priced = []
@@ -296,6 +303,18 @@ class Trader:
         for arm, cfg in C.ARMS[mode].items():
             run = self._run_repeat_arm if "repeat" in cfg else self._run_arm
             balance = run(mode, arm, cfg, priced, tokens, books, now, balance)
+
+    def _eligible(self, cfg, s) -> bool:
+        """Market filters an arm may set: kinds, an explicit series list (traded even when
+        the series is below MIN_SERIES_VOLUME) with min_mkt_volume on the market's volume
+        so far; without `series`, only liquid series."""
+        if "kinds" in cfg and s.kind not in cfg["kinds"]:
+            return False
+        if "series" in cfg:
+            return (s.series_slug in cfg["series"] and
+                    getattr(self, "volume", {}).get(s.condition_id, 0.0) >= cfg.get("min_mkt_volume", 0.0))
+        liquid = getattr(self, "liquid", None)
+        return liquid is None or s.series_slug in liquid
 
     def _log_signals(self, priced, tokens, books, now) -> None:
         def top(bk, key):
@@ -330,7 +349,7 @@ class Trader:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
                 continue
-            if "kinds" in cfg and s.kind not in cfg["kinds"]:   # e.g. strikes-only arms
+            if not self._eligible(cfg, s):
                 continue
             if "max_tau_h" in cfg and s.target_ts - now > cfg["max_tau_h"] * 3600:
                 continue
@@ -434,7 +453,7 @@ class Trader:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
                 continue
-            if "kinds" in cfg and s.kind not in cfg["kinds"]:   # e.g. strikes-only arms
+            if not self._eligible(cfg, s):
                 continue
             st = repeat_state(conn, mode, arm, s.condition_id, slot)
             if st["n"] >= rp["max_buys"]:

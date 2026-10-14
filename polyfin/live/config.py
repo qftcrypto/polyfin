@@ -61,6 +61,14 @@ ARMS = {
         "strike2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
+        # strike2's rule on SPY and META strikes only (2026-10-14): those series are below
+        # MIN_SERIES_VOLUME (median $351 / $212), so no other arm ever trades them; here a
+        # market qualifies on its own volume so far (>= $500), as the backtest kept markets
+        "spymeta2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+                     "series": {"spy-daily-close-uo", "meta-multi-strikes-daily"},
+                     "min_mkt_volume": 500.0,
+                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                     "flip": None},
         # up/down only, edge in [0.05, 0.10): the one band that came out ~breakeven-positive
         # (research/ud_threshold.py, 2026-10-08) - kept on record as an option, not a rule
         "ud_band": {"min_edge": 0.05, "max_edge": 0.10, "slots": {"early"}, "kinds": {"updown"}},

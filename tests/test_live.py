@@ -80,7 +80,7 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(set(C.ARMS["paper"]),
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
-                          "strike_rep", "strike2", "ud_band"})
+                          "strike_rep", "strike2", "ud_band", "spymeta2"})
         self.assertTrue(all(c["min_edge"] == 0.05 for c in C.ARMS["paper"].values()))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
                          {"rep_hold": None, "rep_flip10": 0.10})
@@ -202,6 +202,19 @@ class TestLadderDB(unittest.TestCase):
         self.conn.commit()
         self.assertEqual((r[0], r[1], r[2]), (0.5, 0.42, 30.0))
         self.assertAlmostEqual(float(r[3]), 0.5 - 0.42 - 0.04 * 0.42 * 0.58, places=3)
+
+    def test_series_and_market_volume_filter(self):
+        t = self.trader
+        cfg = {"min_edge": 0.05, "slots": {"early"}, "series": {"test-series"}, "min_mkt_volume": 500.0}
+        t.liquid, t.volume = set(), {self.cid: 499.0}
+        self.assertFalse(t._eligible(cfg, self.spec))             # named series, volume too low
+        t.volume = {self.cid: 500.0}
+        self.assertTrue(t._eligible(cfg, self.spec))              # traded although not liquid
+        self.assertFalse(t._eligible({"min_edge": 0.05, "slots": {"early"}}, self.spec))  # others: liquid only
+        t.liquid = {"test-series"}
+        self.assertTrue(t._eligible({"min_edge": 0.05, "slots": {"early"}}, self.spec))
+        self.assertFalse(t._eligible(dict(cfg, series={"other"}), self.spec))
+        del t.liquid, t.volume
 
     def test_min_price_floor(self):
         cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10], "min_price": 0.15}

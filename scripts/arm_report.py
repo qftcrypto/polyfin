@@ -94,6 +94,9 @@ def describe(cfg) -> str:
     parts.append("slot " + "+".join(sorted(cfg["slots"])))
     if "kinds" in cfg:
         parts.append("only " + "+".join(dict(KINDS).get(k, k) for k in sorted(cfg["kinds"])))
+    if "series" in cfg:
+        parts.append("series " + "+".join(sorted(x.split("-")[0].upper() for x in cfg["series"])) +
+                     (", market volume >= $%s" % g(cfg["min_mkt_volume"]) if cfg.get("min_mkt_volume") else ""))
     if "min_price" in cfg:
         parts.append("ask >= %s" % g(cfg["min_price"]))
     if "max_tau_h" in cfg:
