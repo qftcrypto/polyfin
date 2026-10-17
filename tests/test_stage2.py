@@ -53,6 +53,12 @@ class TestStage2(unittest.TestCase):
         self.assertAlmostEqual(m.prob(st, 1000), flat)                    # production: no regime
         self.assertAlmostEqual(m.prob(st, 1000, variant="regime"), regime)
         self.assertGreater(regime, flat)                                  # quiet past -> narrower old model
+        st.series_slug = "wti-x"
+        m.params["strike_b_series"] = {"wti-x": {"flat": 1.15, "regime": 1.25}}
+        self.assertAlmostEqual(m.prob(st, 1000),
+                               prob_vec(np.array([0.01]), np.array([1e-4]), np.array([0.25]), 0.0, 1.15)[0])
+        self.assertAlmostEqual(m.prob(st, 1000, variant="regime"),
+                               prob_vec(np.array([0.01]), np.array([1e-4]), np.array([0.25]), 0.5, 1.25)[0])
 
     def test_empty_input(self):
         # the late-sharpening subset is empty when SHARPEN_HOURS = 0 (refit crashed on it)

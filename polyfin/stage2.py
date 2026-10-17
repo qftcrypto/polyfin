@@ -56,6 +56,9 @@ STRIKE_MIN_TAU_H = 3.0            # strike_b applies further out than this (late
 # regime removed the strikes-only refit is gamma 0, strike_b 1.20.  Params keep the old
 # fit as regime_strike_b for the comparison arm strike2_regime (variant="regime").
 STRIKE_GAMMA = 0.0
+# strike_b is fitted PER SERIES (2026-10-17): pooled, META (0.60) and SPY (0.95) pulled WTI's
+# own fit (1.15) down to 1.00.  A series with fewer far-out points falls back to the pool.
+STRIKE_B_MIN_ROWS = 2000
 
 
 class Stage2:
@@ -144,11 +147,12 @@ class Stage2:
         b = self.params["b"] if tau_h <= self.params.get("sharpen_hours", 99) else 1.0
         gamma = self.params["gamma"]
         if s.kind == "strikes" and tau_h > STRIKE_MIN_TAU_H:
+            by = self.params.get("strike_b_series", {}).get(getattr(s, "series_slug", None), {})
             if variant == "regime":                        # the pre-2026-10-17 strikes model
-                b = self.params.get("regime_strike_b", self.params.get("strike_b", 1.0))
+                b = by.get("regime", self.params.get("regime_strike_b", self.params.get("strike_b", 1.0)))
             else:
                 gamma = self.params.get("strike_gamma", gamma)
-                b = self.params.get("strike_b", 1.0)
+                b = by.get("flat", self.params.get("strike_b", 1.0))
         return float(prob_vec(np.array([f[1]]), np.array([f[2]]), np.array([f[3]]), gamma, b)[0])
 
 
@@ -316,6 +320,14 @@ def main() -> None:
     params["strike_gamma"] = STRIKE_GAMMA
     params["strike_b"] = float(fit_strike_b(a, strike_rows(a), STRIKE_GAMMA))
     params["regime_strike_b"] = float(fit_strike_b(a, strike_rows(a), params["gamma"]))
+    series = np.array([{s.condition_id: s.series_slug for s in specs}[c] for c in a["cid"]])
+    params["strike_b_series"] = {}
+    for sl in sorted(set(series[strike_rows(a)])):
+        m = strike_rows(a) & (series == sl)
+        if m.sum() >= STRIKE_B_MIN_ROWS:
+            params["strike_b_series"][sl] = {
+                "flat": float(fit_strike_b(a, m, STRIKE_GAMMA)),
+                "regime": float(fit_strike_b(a, m, params["gamma"])), "rows": int(m.sum())}
     pfull = prob_vec(a["xn"], a["v"], a["R"], params["gamma"], params["b"])
     params["blend"] = [float(x) for x in fit_blend(pfull, a["pm"], a["y"])]
     params["fitted_at"] = int(time.time())
