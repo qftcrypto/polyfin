@@ -101,6 +101,12 @@ def describe(cfg) -> str:
         parts.append("model with the Hyperliquid perp nowcast for CL=F")
     if cfg.get("model") == "regime":
         parts.append("OLD strikes model (volatility-regime scaling)")
+    if "worst_cap" in cfg:
+        parts.append("skip buys that put the day's worst case below -$%s" % g(cfg["worst_cap"]))
+    if "hedge" in cfg:
+        hg = cfg["hedge"]
+        parts.append("hedge %d shares when worst case < -$%s (edge >= %s, <= %d/day)" % (
+            hg["shares"], g(-hg["trigger"]), g(hg["min_edge"]), hg["max_per_day"]))
     if "centre_tol" in cfg:
         parts.append("model and market centres within $%s" % g(cfg["centre_tol"]))
     if "min_price" in cfg:
@@ -143,6 +149,8 @@ def run(orders, now):
     """Rows: (section, arm, kind, period) summaries with the arm's status and rule."""
     for o in orders:
         o["day"] = et_day(o["target_ts"])
+        if o["arm"].endswith("+h"):                  # hedge orders belong to their arm
+            o["arm"] = o["arm"][:-2]
     settled_days = sorted({o["day"] for o in orders if o["pnl"] is not None})
     units = defaultdict(list)                   # (mode, arm) -> fills
     for o in orders:

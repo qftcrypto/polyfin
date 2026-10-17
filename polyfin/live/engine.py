@@ -21,6 +21,7 @@ import math
 import time
 from datetime import datetime
 
+import numpy as np
 import psycopg2
 
 from .. import config as mcfg
@@ -366,6 +367,89 @@ class Trader:
         liquid = getattr(self, "liquid", None)
         return liquid is None or s.series_slug in liquid
 
+    # -- portfolio view of a strike ladder (research/strike_portfolio.py) ------------
+    def _ladder(self, priced, s):
+        """(bucket closes, model bucket probabilities, ladder rows) for s's strike ladder."""
+        rows = sorted((float(x.strike), p, x, f) for x, p, f in priced
+                      if x.kind == "strikes" and x.series_slug == s.series_slug
+                      and x.target_ts == s.target_ts and x.strike is not None)
+        if len(rows) < 3:
+            return None
+        ks = np.array([r[0] for r in rows])
+        ps = np.minimum.accumulate(np.clip([r[1] for r in rows], 0, 1))
+        reps = np.concatenate([[ks[0] - 0.5], ks + 0.5])
+        pr = np.maximum(np.concatenate([[1 - ps[0]], ps[:-1] - ps[1:], [ps[-1]]]), 0)
+        return reps, pr, rows
+
+    def _book(self, mode, arm, s, reps_):
+        """P&L in each close bucket of the positions this arm (and its hedges) hold on
+        s's ladder."""
+        held = self.conn.execute(
+            "SELECT strike, side, shares_filled, shares_filled * avg_price + COALESCE(fee, 0) "
+            "FROM trade.orders WHERE mode = %s AND arm IN (%s, %s) AND series_slug = %s "
+            "AND target_ts = %s AND shares_filled > 0 AND status IN ('filled', 'partial', 'unknown')",
+            (mode, arm, arm + "+h", s.series_slug, s.target_ts)).fetchall()
+        self.conn.commit()
+        v = np.zeros(len(reps_))
+        for k, side, sh, cost in held:
+            v += float(sh) * ((reps_ > float(k)) if side == "yes" else (reps_ <= float(k))) - float(cost)
+        return v
+
+    def _hedge(self, mode, arm, cfg, priced, tokens, books, now) -> int:
+        """When a ladder's worst case is below hedge["trigger"], buy hedge["shares"] of the
+        strike/side that most raises it, if its edge >= hedge["min_edge"]; <= max_per_day
+        per ladder.  Recorded as arm + "+h" so the main rule's per-market state is untouched."""
+        h, done, n = cfg["hedge"], set(), 0
+        for s, p, f in priced:
+            key = (s.series_slug, s.target_ts)
+            if s.kind != "strikes" or key in done or not self._eligible(cfg, s):
+                continue
+            done.add(key)
+            slot = slot_for(s.target_ts - now)
+            if slot not in cfg["slots"]:
+                continue
+            lad = self._ladder(priced, s)
+            if lad is None:
+                continue
+            reps, pr, rows = lad
+            cur = self._book(mode, arm, s, reps)
+            if not cur.any() or cur.min() >= h["trigger"]:
+                continue
+            count = self.conn.execute(
+                "SELECT count(*) FROM trade.orders WHERE mode = %s AND arm = %s AND series_slug = %s "
+                "AND target_ts = %s AND shares_filled > 0", (mode, arm + "+h", s.series_slug, s.target_ts)).fetchone()[0]
+            self.conn.commit()
+            if count >= h["max_per_day"]:
+                continue
+            best = None
+            for k, q, x, fx in rows:
+                for side, tok, qs in (("yes", x.token_yes, q), ("no", tokens[x.condition_id], 1 - q)):
+                    bk = books.get(tok)
+                    if not bk or not bk["asks"]:
+                        continue
+                    ask = bk["asks"][0][0]
+                    if not C.MIN_PRICE <= ask <= C.MAX_PRICE:
+                        continue
+                    e = qs - ask - fee_per_share(ask)
+                    if e < h["min_edge"]:
+                        continue
+                    add = h["shares"] * ((reps > k) if side == "yes" else (reps <= k)) \
+                        - h["shares"] * (ask + fee_per_share(ask))
+                    gain = (cur + add).min() - cur.min()
+                    if gain > 0.5 and (best is None or gain > best[0]):
+                        best = (gain, x, side, tok, qs, e, ask, bk, fx)
+            if best is None:
+                continue
+            gain, x, side, tok, qs, e, ask, bk, fx = best
+            lim = round(min(ask + C.MAX_SLIP, 0.99), 2)
+            st = repeat_state(self.conn, mode, arm + "+h", x.condition_id, slot)
+            log.info("[%s] hedge %s %s >%s: day worst case $%.2f -> +$%.2f, edge %.3f",
+                     arm, x.series_slug, side, x.strike, cur.min(), gain, e)
+            self._enter(mode, arm + "+h", x, side, tok, qs, e, lim, h["shares"], bk, fx, now, slot,
+                        st["next_leg"])
+            n += 1
+        return n
+
     def _log_signals(self, priced, tokens, books, now) -> None:
         def top(bk, key):
             return tuple(bk[key][0]) if bk and bk.get(key) else (None, None)
@@ -549,6 +633,16 @@ class Trader:
                 continue
             if blocked(risk, mode, shares * lim, slot):
                 continue
+            if "worst_cap" in cfg and s.kind == "strikes":   # the day's book as one bet on the close
+                lad = self._ladder(priced, s)
+                if lad is not None:
+                    reps, pr, held = lad[0], lad[1], self._book(mode, arm, s, reps_=lad[0])
+                    add = shares * ((reps > s.strike) if side == "yes" else (reps <= s.strike)) \
+                        - shares * (lim + fee_per_share(lim))
+                    if (held + add).min() < -cfg["worst_cap"]:
+                        log.info("[%s] skip %s %s >%s: day worst case would be $%.2f (cap -$%.0f)",
+                                 arm, s.series_slug, side, s.strike, (held + add).min(), cfg["worst_cap"])
+                        continue
             if mode == "live":                             # the wallet is the limit
                 cost = shares * lim * 1.02                 # + fee headroom
                 if balance is None or balance < cost:
@@ -561,6 +655,8 @@ class Trader:
             if balance is not None:
                 balance -= shares * lim * 1.02
             entered += 1
+        if "hedge" in cfg and mode == "paper":
+            entered += self._hedge(mode, arm, cfg, priced, tokens, books, now)
         risk = risk_state(conn, mode, time.time(), arm)
         log.info("%s/%s: %d markets priced, %d entries | today %d orders, open $%.2f, pnl $%+.2f",
                  mode, arm, len(priced), entered, risk["orders_today"], risk["open_usd"],

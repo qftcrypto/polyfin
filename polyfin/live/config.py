@@ -61,6 +61,16 @@ ARMS = {
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
+        # the live rule + portfolio view (2026-10-17, research/strike_portfolio.py): skip a buy
+        # that would put the day's ladder worst case below -$30; when the worst case is below
+        # -$20, hedge with 5 shares of the strike/side that most raises it (edge >= -0.05),
+        # <= 2 hedges/day (recorded as strike2_hedge+h).  Books +$68 vs +$64 (worst day -$13 vs
+        # -$18), forward +$81 vs +$79 (-$11 vs -$14) for the hedge alone; the cap was ~free forward.
+        "strike2_hedge": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                          "worst_cap": 30.0,
+                          "hedge": {"trigger": -20.0, "min_edge": -0.05, "max_per_day": 2, "shares": 5},
+                          "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                          "flip": None},
         # the live rule on the OLD strikes model, FROZEN at what live used to 10/16 (regime
         # scaling gamma 0.5, strike_b 1.3; stage2.REGIME_FROZEN), to measure the change
         "strike2_regime": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},

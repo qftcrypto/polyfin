@@ -81,8 +81,9 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(set(C.ARMS["paper"]),
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
                           "strike_rep", "strike2", "ud_band", "strike2_agree", "strike2_perp",
-                          "strike_rep08", "strike2_05", "strike2_regime"})
-        self.assertTrue(all(c["min_edge"] == (0.08 if a in ("strike_rep08", "strike2", "strike2_regime") else 0.05)
+                          "strike_rep08", "strike2_05", "strike2_regime", "strike2_hedge"})
+        self.assertTrue(all(c["min_edge"] == (0.08 if a in ("strike_rep08", "strike2", "strike2_regime",
+                                                             "strike2_hedge") else 0.05)
                             for a, c in C.ARMS["paper"].items()))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
                          {"rep_hold": None, "rep_flip10": 0.10})
@@ -235,6 +236,40 @@ class TestLadderDB(unittest.TestCase):
         self.assertTrue(t._eligible(cfg, priced[0][0]))
         self.assertFalse(t._eligible(dict(cfg, centre_tol=0.25), priced[0][0]))
         del t.centres
+
+    def test_portfolio_cap_and_hedge(self):
+        from polyfin.stage1 import Spec
+        t, now = self.trader, self.now
+        tgt = int(now + 20 * 3600)
+        mk = lambda k: Spec("hx%d" % k, "wti-hx", "strikes", "CL=F", "hy%d" % k, tgt, 0, float(k), None, tgt)
+        specs = [mk(k) for k in (95, 96, 97, 98)]
+        ps = {95: 0.70, 96: 0.45, 97: 0.20, 98: 0.08}
+        priced = [(x, ps[int(x.strike)], (0, 0, 1e-4, 1)) for x in specs]
+        tokens = {x.condition_id: "hn%d" % int(x.strike) for x in specs}
+        # market far more bullish than the model: No is cheap on every strike
+        bk = lambda a: {"bids": [], "asks": [(a, 1000.0)], "ts": 0}
+        books = {}
+        for x in specs:
+            k = int(x.strike)
+            books[x.token_yes] = bk(min(ps[k] + 0.25, 0.97))
+            books[tokens[x.condition_id]] = bk(max(1 - ps[k] - 0.15, 0.05))
+        cfg = {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"}, "worst_cap": 12.0,
+               "hedge": {"trigger": -5.0, "min_edge": -0.50, "max_per_day": 2, "shares": 5},
+               "repeat": {"spacing_s": 900, "max_buys": 2, "market_cap_usd": 10.0}, "flip": None}
+        try:
+            t._run_repeat_arm("paper", "ph", cfg, priced, tokens, books, now, None)
+            rows = self.conn.execute("SELECT arm, strike, side FROM trade.orders WHERE arm IN ('ph', 'ph+h') "
+                                     "ORDER BY id").fetchall()
+            main = [r for r in rows if r[0] == "ph"]
+            hedges = [r for r in rows if r[0] == "ph+h"]
+            self.assertTrue(main and all(r[2] == "no" for r in main))
+            self.assertLess(len(main), 4)                          # the cap stopped the stacking
+            self.assertTrue(hedges and all(r[2] == "yes" for r in hedges))   # hedge on the other side
+            reps, pr, _ = t._ladder(priced, specs[0])
+            self.assertGreaterEqual(t._book("paper", "ph", specs[0], reps).min(), -12.0 - 5.5)
+        finally:
+            self.conn.execute("DELETE FROM trade.orders WHERE arm IN ('ph', 'ph+h')")
+            self.conn.commit()
 
     def test_min_price_floor(self):
         cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10], "min_price": 0.15}
