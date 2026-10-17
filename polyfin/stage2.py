@@ -53,8 +53,8 @@ SHARPEN_HOURS = 0.0
 STRIKE_MIN_TAU_H = 3.0            # strike_b applies further out than this (late it hurt)
 # Strikes far out use NO volatility-regime scaling (2026-10-17, research/strike_regime.py):
 # a quiet recent 6h (R at its 0.25 floor) narrowed the band before 10/16's +$3 move; with the
-# regime removed the strikes-only refit is gamma 0, strike_b 1.20.  Params keep the old
-# fit as regime_strike_b for the comparison arm strike2_regime (variant="regime").
+# regime removed the strikes-only refit is gamma 0, strike_b ~1.15-1.20 (per series below).
+# The comparison arm strike2_regime (variant="regime") uses REGIME_FROZEN.
 STRIKE_GAMMA = 0.0
 # strike_b is fitted PER SERIES (2026-10-17): pooled, META (0.60) and SPY (0.95) pulled WTI's
 # own fit (1.15) down to 1.00.  A series with fewer far-out points falls back to the pool.
