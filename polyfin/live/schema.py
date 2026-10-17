@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS trade.signals (
 
 -- the perp-nowcast model's P(yes) beside model_p (2026-10-17; NULL where it does not apply)
 ALTER TABLE trade.signals ADD COLUMN IF NOT EXISTS model_p_perp REAL;
+-- the pre-2026-10-17 strikes model (volatility-regime scaling) beside it, for strike2_regime
+ALTER TABLE trade.signals ADD COLUMN IF NOT EXISTS model_p_regime REAL;
 
 -- at most one live-or-possibly-live position per market, mode, arm, slot and leg
 DROP INDEX IF EXISTS trade.orders_one_position;

@@ -51,6 +51,11 @@ SHARPS = np.linspace(0.6, 2.5, 39)
 # last-3h Brier worse (0.0761 vs 0.0741 raw; market 0.0751).  0 = never applied.
 SHARPEN_HOURS = 0.0
 STRIKE_MIN_TAU_H = 3.0            # strike_b applies further out than this (late it hurt)
+# Strikes far out use NO volatility-regime scaling (2026-10-17, research/strike_regime.py):
+# a quiet recent 6h (R at its 0.25 floor) narrowed the band before 10/16's +$3 move; with the
+# regime removed the strikes-only refit is gamma 0, strike_b 1.20.  Params keep the old
+# fit as regime_strike_b for the comparison arm strike2_regime (variant="regime").
+STRIKE_GAMMA = 0.0
 
 
 class Stage2:
@@ -129,17 +134,22 @@ class Stage2:
         return (math.log(raw / ref), math.log(now / ref),
                 clock.var(t, s.target_ts, exclude_day), R)
 
-    def prob(self, s: Spec, t: float, exclude_day=None, perp: bool = False) -> float | None:
+    def prob(self, s: Spec, t: float, exclude_day=None, perp: bool = False,
+             variant: str | None = None) -> float | None:
         f = self.features(s, t, exclude_day, perp)
         if f is None:
             return None
         # sharpening helps near the target and hurts further out (see evaluate())
         tau_h = (s.target_ts - t) / 3600
         b = self.params["b"] if tau_h <= self.params.get("sharpen_hours", 99) else 1.0
+        gamma = self.params["gamma"]
         if s.kind == "strikes" and tau_h > STRIKE_MIN_TAU_H:
-            b = self.params.get("strike_b", 1.0)
-        return float(prob_vec(np.array([f[1]]), np.array([f[2]]), np.array([f[3]]),
-                              self.params["gamma"], b)[0])
+            if variant == "regime":                        # the pre-2026-10-17 strikes model
+                b = self.params.get("regime_strike_b", self.params.get("strike_b", 1.0))
+            else:
+                gamma = self.params.get("strike_gamma", gamma)
+                b = self.params.get("strike_b", 1.0)
+        return float(prob_vec(np.array([f[1]]), np.array([f[2]]), np.array([f[3]]), gamma, b)[0])
 
 
 def _rth(t: float) -> bool:
@@ -249,9 +259,9 @@ def evaluate(a):
         out["sharp<=3h"][near] = full(near)
         far_k = test & strike_rows(a)                    # the live model: strikes sharpening
         if far_k.any():
-            sb = fit_strike_b(a, train & strike_rows(a), pf["gamma"])
+            sb = fit_strike_b(a, train & strike_rows(a), STRIKE_GAMMA)
             out["sharp<=3h"][far_k] = prob_vec(a["xn"][far_k], a["v"][far_k], a["R"][far_k],
-                                               pf["gamma"], sb)
+                                               STRIKE_GAMMA, sb)
         w = fit_blend(full(train), a["pm"][train], a["y"][train])
         out["+blend"][test] = 1 / (1 + np.exp(-(w[0] * logit(full(test)) + w[1] * logit(a["pm"][test]))))
         fits.append((d, pv["gamma"], pf["gamma"], pf["b"], w))
@@ -303,7 +313,9 @@ def main() -> None:
               else {"gamma": 0.0, "b": 1.0})
     params["gamma"] = fit_sharp(a, np.ones_like(a["y"], dtype=bool), fit_b=False)["gamma"]
     params["sharpen_hours"] = SHARPEN_HOURS
-    params["strike_b"] = float(fit_strike_b(a, strike_rows(a), params["gamma"]))
+    params["strike_gamma"] = STRIKE_GAMMA
+    params["strike_b"] = float(fit_strike_b(a, strike_rows(a), STRIKE_GAMMA))
+    params["regime_strike_b"] = float(fit_strike_b(a, strike_rows(a), params["gamma"]))
     pfull = prob_vec(a["xn"], a["v"], a["R"], params["gamma"], params["b"])
     params["blend"] = [float(x) for x in fit_blend(pfull, a["pm"], a["y"])]
     params["fitted_at"] = int(time.time())

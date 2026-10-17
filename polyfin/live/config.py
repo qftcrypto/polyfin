@@ -61,6 +61,12 @@ ARMS = {
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
+        # the live rule on the OLD strikes model (vol-regime scaling, strike_b ~1.3), to
+        # measure the 2026-10-17 model change on the same markets
+        "strike2_regime": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                           "model": "regime",
+                           "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                           "flip": None},
         # the live rule before 2026-10-17 (edge 0.05), kept to measure the change
         "strike2_05": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
@@ -91,7 +97,9 @@ ARMS = {
     },
     "live": {
         # 2026-10-08 (user): strikes only, 2 buys, 15 min apart, same side, with the
-        # strikes-sharpened model (research/strike_repeat.py).  Edge 0.05 -> 0.08 on
+        # strikes-sharpened model (research/strike_repeat.py).  From 2026-10-17 the strikes
+        # model has no volatility-regime scaling (stage2.STRIKE_GAMMA = 0, strike_b ~1.20;
+        # research/strike_regime.py); strike2_regime keeps the old model on paper.  Edge 0.05 -> 0.08 on
         # 2026-10-17 (user; research/strike_threshold.py: 0.08 beat 0.05 on books +11.1% vs
         # +4.5% and forward +33.3% vs +7.3% - overlapping days, picked from a sweep).
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},

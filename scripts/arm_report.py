@@ -99,6 +99,8 @@ def describe(cfg) -> str:
                      (", market volume >= $%s" % g(cfg["min_mkt_volume"]) if cfg.get("min_mkt_volume") else ""))
     if cfg.get("model") == "perp":
         parts.append("model with the Hyperliquid perp nowcast for CL=F")
+    if cfg.get("model") == "regime":
+        parts.append("OLD strikes model (volatility-regime scaling)")
     if "centre_tol" in cfg:
         parts.append("model and market centres within $%s" % g(cfg["centre_tol"]))
     if "min_price" in cfg:

@@ -42,6 +42,18 @@ class TestStage2(unittest.TestCase):
         self.assertAlmostEqual(m.nowcast("CL=F", t), 90.0)                         # default: stale bar
         self.assertAlmostEqual(m.nowcast("CL=F", t, perp=True), 90.0 * 1.02)      # moved by the perp
 
+    def test_strikes_model_flat_vs_regime(self):
+        m = Stage2.__new__(Stage2)
+        m.params = {"gamma": 0.5, "b": 1.0, "sharpen_hours": 0.0, "strike_gamma": 0.0,
+                    "strike_b": 1.2, "regime_strike_b": 1.3}
+        m.features = lambda s, t, ex=None, perp=False: (0.0, 0.01, 1e-4, 0.25)   # quiet: R at floor
+        st = type("S", (), {"kind": "strikes", "target_ts": 1000 + 10 * 3600})()
+        flat = prob_vec(np.array([0.01]), np.array([1e-4]), np.array([0.25]), 0.0, 1.2)[0]
+        regime = prob_vec(np.array([0.01]), np.array([1e-4]), np.array([0.25]), 0.5, 1.3)[0]
+        self.assertAlmostEqual(m.prob(st, 1000), flat)                    # production: no regime
+        self.assertAlmostEqual(m.prob(st, 1000, variant="regime"), regime)
+        self.assertGreater(regime, flat)                                  # quiet past -> narrower old model
+
     def test_empty_input(self):
         # the late-sharpening subset is empty when SHARPEN_HOURS = 0 (refit crashed on it)
         self.assertEqual(prob_vec(np.array([]), np.array([]), np.array([]), 0.0, 1.0).size, 0)
