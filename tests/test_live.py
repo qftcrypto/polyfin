@@ -74,15 +74,15 @@ class TestSlots(unittest.TestCase):
     def test_live_is_strike2_early_only(self):
         from polyfin.live import config as C
         self.assertEqual(C.ARMS["live"], {"strike2": {
-            "min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+            "min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
             "repeat": {"spacing_s": 900, "max_buys": 2, "market_cap_usd": 10.0}, "flip": None}})
         self.assertEqual(C.ARMS["live"]["strike2"], C.ARMS["paper"]["strike2"])   # paper twin
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(set(C.ARMS["paper"]),
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
                           "strike_rep", "strike2", "ud_band", "strike2_agree", "strike2_perp",
-                          "strike_rep08"})
-        self.assertTrue(all(c["min_edge"] == (0.08 if a == "strike_rep08" else 0.05)
+                          "strike_rep08", "strike2_05"})
+        self.assertTrue(all(c["min_edge"] == (0.08 if a in ("strike_rep08", "strike2") else 0.05)
                             for a, c in C.ARMS["paper"].items()))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
                          {"rep_hold": None, "rep_flip10": 0.10})

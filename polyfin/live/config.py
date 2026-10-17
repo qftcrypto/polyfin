@@ -57,8 +57,12 @@ ARMS = {
         # real books, 7 days, ~+14-15% per $ at any repeat rate, 6/7 days positive)
         "strike_rep": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                        "repeat": REPEAT, "flip": None},
-        # paper twin of the live rule: 2 buys at edge >= 0.05, 15 min apart, same side
-        "strike2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+        # paper twin of the live rule: 2 buys at edge >= 0.08, 15 min apart, same side
+        "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                    "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                    "flip": None},
+        # the live rule before 2026-10-17 (edge 0.05), kept to measure the change
+        "strike2_05": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
         # strike2 + centre agreement (2026-10-14, research/wti_width.py): trade a strike ladder
@@ -86,10 +90,11 @@ ARMS = {
         "ud_band": {"min_edge": 0.05, "max_edge": 0.10, "slots": {"early"}, "kinds": {"updown"}},
     },
     "live": {
-        # 2026-10-08 (user): strikes only, 2 buys at edge >= 0.05, 15 min apart, same side,
-        # with the strikes-sharpened model (research/strike_repeat.py).  Replaces ladder2
-        # (all market types; lost 10/2-10/6), which keeps running as a paper arm.
-        "strike2": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
+        # 2026-10-08 (user): strikes only, 2 buys, 15 min apart, same side, with the
+        # strikes-sharpened model (research/strike_repeat.py).  Edge 0.05 -> 0.08 on
+        # 2026-10-17 (user; research/strike_threshold.py: 0.08 beat 0.05 on books +11.1% vs
+        # +4.5% and forward +33.3% vs +7.3% - overlapping days, picked from a sweep).
+        "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
     },
