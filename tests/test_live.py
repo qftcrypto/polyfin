@@ -80,8 +80,10 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(set(C.ARMS["paper"]),
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
-                          "strike_rep", "strike2", "ud_band", "spymeta2", "strike2_agree"})
-        self.assertTrue(all(c["min_edge"] == 0.05 for c in C.ARMS["paper"].values()))
+                          "strike_rep", "strike2", "ud_band", "strike2_agree", "strike2_perp",
+                          "strike_rep08"})
+        self.assertTrue(all(c["min_edge"] == (0.08 if a == "strike_rep08" else 0.05)
+                            for a, c in C.ARMS["paper"].items()))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
                          {"rep_hold": None, "rep_flip10": 0.10})
 

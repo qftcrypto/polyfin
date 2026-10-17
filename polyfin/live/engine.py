@@ -321,6 +321,13 @@ class Trader:
                             100 * day_sd)
                 continue
             priced.append((s, p, f))
+        # the perp-nowcast model (paper arm strike2_perp): same markets, CL=F moved by the perp
+        self.alt = {}
+        for s, p, f in priced:
+            if s.symbol in mcfg.PERP_NOWCAST:
+                pa, fa = model.prob(s, now, perp=True), model.features(s, now, perp=True)
+                if pa is not None and fa is not None:
+                    self.alt[s.condition_id] = (pa, fa)
         tokens = {r[0]: r[1] for r in conn.execute(
             "SELECT condition_id, token_no FROM markets WHERE condition_id = ANY(%s)",
             ([s.condition_id for s, _, _ in priced],))}
@@ -331,9 +338,11 @@ class Trader:
             self._log_signals(priced, tokens, books, now)
 
         balance = self.clob.collateral_balance() if mode == "live" else None
+        priced_perp = [(s, *self.alt.get(s.condition_id, (p, f))) for s, p, f in priced]
         for arm, cfg in C.ARMS[mode].items():
             run = self._run_repeat_arm if "repeat" in cfg else self._run_arm
-            balance = run(mode, arm, cfg, priced, tokens, books, now, balance)
+            pr = priced_perp if cfg.get("model") == "perp" else priced
+            balance = run(mode, arm, cfg, pr, tokens, books, now, balance)
 
     def _eligible(self, cfg, s) -> bool:
         """Market filters an arm may set: kinds, an explicit series list (traded even when
@@ -362,10 +371,13 @@ class Trader:
             ey = p - ya - fee_per_share(ya) if ya else None
             en = (1 - p) - na - fee_per_share(na) if na else None
             rows.append((int(now), s.condition_id, s.kind, (s.target_ts - now) / 3600, p, f[1],
-                         yb, ys, ya, yas, na, nas, ey, en))
+                         yb, ys, ya, yas, na, nas, ey, en,
+                         getattr(self, "alt", {}).get(s.condition_id, (None,))[0]))
         try:
             self.conn.executemany(
-                "INSERT INTO trade.signals VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "INSERT INTO trade.signals (ts, condition_id, kind, tau_h, model_p, x_now, yes_bid, "
+                "yes_bid_size, yes_ask, yes_ask_size, no_ask, no_ask_size, edge_yes, edge_no, "
+                "model_p_perp) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT DO NOTHING", rows)
             self.conn.commit()
         except Exception as e:                          # a log must never stop trading

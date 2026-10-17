@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS trade.signals (
     PRIMARY KEY (condition_id, ts)
 );
 
+-- the perp-nowcast model's P(yes) beside model_p (2026-10-17; NULL where it does not apply)
+ALTER TABLE trade.signals ADD COLUMN IF NOT EXISTS model_p_perp REAL;
+
 -- at most one live-or-possibly-live position per market, mode, arm, slot and leg
 DROP INDEX IF EXISTS trade.orders_one_position;
 DROP INDEX IF EXISTS trade.orders_one_position_slot;

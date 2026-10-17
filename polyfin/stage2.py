@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import NOWCAST_FUTURES, NOWCAST_SYMBOLS
+from .config import NOWCAST_FUTURES, NOWCAST_SYMBOLS, PERP_MAX_AGE_S, PERP_NOWCAST
 from .data import load_history
 from .settings import ROOT
 from .db import connect
@@ -89,12 +89,17 @@ class Stage2:
         self._beta[sym] = best
         return best
 
-    def nowcast(self, sym: str, t: float) -> float | None:
+    def nowcast(self, sym: str, t: float, perp: bool = False) -> float | None:
         bars = self.m1._get(sym)[0]
         lb = bars.last_bar(t)
         if lb is None:
             return None
         ts, px = lb
+        if perp and sym in PERP_NOWCAST and t - (ts + 60) >= 120:
+            pb = self.m1._get(PERP_NOWCAST[sym])[0]
+            f0, f1 = pb.price_at(ts + 60, max_age=PERP_MAX_AGE_S), pb.price_at(t, max_age=PERP_MAX_AGE_S)
+            if f0 and f1:
+                return px * f1 / f0                    # the stale bar moved by the perp since
         fb = self.beta(sym)
         if fb is None or t - (ts + 60) < 120:          # fresh print: nothing to add
             return px
@@ -105,7 +110,7 @@ class Stage2:
         return px * math.exp(beta * math.log(f1 / f0))
 
     # -- features / probability -----------------------------------------------
-    def features(self, s: Spec, t: float, exclude_day=None):
+    def features(self, s: Spec, t: float, exclude_day=None, perp: bool = False):
         """(x_raw, x_nowcast, v, R) at t, or None."""
         if t >= s.target_ts:
             return None
@@ -118,14 +123,14 @@ class Stage2:
         if s.kind != "strikes" and s.ref_ts > t:
             return 0.0, 0.0, clock.var(s.ref_ts, s.target_ts, exclude_day), R
         ref = self.m1.reference(s)
-        now = self.nowcast(s.symbol, t)
+        now = self.nowcast(s.symbol, t, perp)
         if not ref or not now:
             return None
         return (math.log(raw / ref), math.log(now / ref),
                 clock.var(t, s.target_ts, exclude_day), R)
 
-    def prob(self, s: Spec, t: float, exclude_day=None) -> float | None:
-        f = self.features(s, t, exclude_day)
+    def prob(self, s: Spec, t: float, exclude_day=None, perp: bool = False) -> float | None:
+        f = self.features(s, t, exclude_day, perp)
         if f is None:
             return None
         # sharpening helps near the target and hurts further out (see evaluate())

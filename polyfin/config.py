@@ -88,6 +88,11 @@ NOWCAST_SYMBOLS = {
     "RKLB", "ABNB", "COIN", "HOOD", "MU", "SPY", "EWY", "^GSPC", "^DJI", "^RUT", "^NYA",
 }
 NOWCAST_FUTURES = ["ES=F", "NQ=F"]
+# Optional perp nowcast (stage 2 `perp=True`, paper arm strike2_perp): Yahoo serves CL=F
+# ~10.5 min late live; the Hyperliquid perp (polyfin/hyperliquid.py) is real time and
+# moves with it (1m corr 0.98), so the stale bar is moved by the perp's return since.
+PERP_NOWCAST = {"CL=F": "HL:CL"}
+PERP_MAX_AGE_S = 180         # the perp's own bar must be this fresh, else no correction
 
 # Recorded as model features only; no market settles on them.
 CONTEXT_SYMBOLS = ["ES=F", "NQ=F", "^VIX", "^NDX"]

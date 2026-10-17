@@ -23,13 +23,24 @@ class TestStage2(unittest.TestCase):
     def test_strike_b_only_strikes_far_out(self):
         m = Stage2.__new__(Stage2)
         m.params = {"gamma": 0.0, "b": 1.0, "sharpen_hours": 0.0, "strike_b": 1.5}
-        m.features = lambda s, t, ex=None: (0.0, 0.01, 1e-4, 1.0)   # +1 sd above
+        m.features = lambda s, t, ex=None, perp=False: (0.0, 0.01, 1e-4, 1.0)   # +1 sd above
         far, near = 1000 + 10 * 3600, 1000 + 3600
         st = lambda kind, tgt: type("S", (), {"kind": kind, "target_ts": tgt})()
         base = prob_vec(np.array([0.01]), np.array([1e-4]), np.array([1.0]), 0.0, 1.0)[0]
         self.assertGreater(m.prob(st("strikes", far), 1000), base + 0.01)     # sharpened
         self.assertAlmostEqual(m.prob(st("strikes", near), 1000), base)      # late: untouched
         self.assertAlmostEqual(m.prob(st("updown", far), 1000), base)        # up/down: untouched
+
+    def test_perp_nowcast(self):
+        from polyfin.data import Bars
+        m = Stage2.__new__(Stage2)
+        m.params, m._beta = {"gamma": 0.0, "b": 1.0}, {}
+        cl = Bars([(t, 90.0, 90.0) for t in range(0, 601, 60)])                  # CL=F to t=600
+        hl = Bars([(t, 80.0, 80.0 * (1.02 if t >= 900 else 1.0)) for t in range(0, 1261, 60)])
+        m.m1 = type("M1", (), {"_get": lambda self, s: ({"CL=F": cl, "HL:CL": hl}[s], None)})()
+        t = 1320                                                                   # CL=F 11 min stale
+        self.assertAlmostEqual(m.nowcast("CL=F", t), 90.0)                         # default: stale bar
+        self.assertAlmostEqual(m.nowcast("CL=F", t, perp=True), 90.0 * 1.02)      # moved by the perp
 
     def test_empty_input(self):
         # the late-sharpening subset is empty when SHARPEN_HOURS = 0 (refit crashed on it)

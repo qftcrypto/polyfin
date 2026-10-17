@@ -97,6 +97,8 @@ def describe(cfg) -> str:
     if "series" in cfg:
         parts.append("series " + "+".join(sorted(x.split("-")[0].upper() for x in cfg["series"])) +
                      (", market volume >= $%s" % g(cfg["min_mkt_volume"]) if cfg.get("min_mkt_volume") else ""))
+    if cfg.get("model") == "perp":
+        parts.append("model with the Hyperliquid perp nowcast for CL=F")
     if "centre_tol" in cfg:
         parts.append("model and market centres within $%s" % g(cfg["centre_tol"]))
     if "min_price" in cfg:
