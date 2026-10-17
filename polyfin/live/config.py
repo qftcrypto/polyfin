@@ -61,8 +61,8 @@ ARMS = {
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
-        # the live rule on the OLD strikes model (vol-regime scaling, strike_b ~1.3), to
-        # measure the 2026-10-17 model change on the same markets
+        # the live rule on the OLD strikes model, FROZEN at what live used to 10/16 (regime
+        # scaling gamma 0.5, strike_b 1.3; stage2.REGIME_FROZEN), to measure the change
         "strike2_regime": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
                            "model": "regime",
                            "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},

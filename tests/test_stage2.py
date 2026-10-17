@@ -44,8 +44,8 @@ class TestStage2(unittest.TestCase):
 
     def test_strikes_model_flat_vs_regime(self):
         m = Stage2.__new__(Stage2)
-        m.params = {"gamma": 0.5, "b": 1.0, "sharpen_hours": 0.0, "strike_gamma": 0.0,
-                    "strike_b": 1.2, "regime_strike_b": 1.3}
+        m.params = {"gamma": 0.25, "b": 1.0, "sharpen_hours": 0.0, "strike_gamma": 0.0,
+                    "strike_b": 1.2}
         m.features = lambda s, t, ex=None, perp=False: (0.0, 0.01, 1e-4, 0.25)   # quiet: R at floor
         st = type("S", (), {"kind": "strikes", "target_ts": 1000 + 10 * 3600})()
         flat = prob_vec(np.array([0.01]), np.array([1e-4]), np.array([0.25]), 0.0, 1.2)[0]
@@ -54,11 +54,10 @@ class TestStage2(unittest.TestCase):
         self.assertAlmostEqual(m.prob(st, 1000, variant="regime"), regime)
         self.assertGreater(regime, flat)                                  # quiet past -> narrower old model
         st.series_slug = "wti-x"
-        m.params["strike_b_series"] = {"wti-x": {"flat": 1.15, "regime": 1.25}}
+        m.params["strike_b_series"] = {"wti-x": {"flat": 1.15}}
         self.assertAlmostEqual(m.prob(st, 1000),
                                prob_vec(np.array([0.01]), np.array([1e-4]), np.array([0.25]), 0.0, 1.15)[0])
-        self.assertAlmostEqual(m.prob(st, 1000, variant="regime"),
-                               prob_vec(np.array([0.01]), np.array([1e-4]), np.array([0.25]), 0.5, 1.25)[0])
+        self.assertAlmostEqual(m.prob(st, 1000, variant="regime"), regime)   # frozen 0.5 / 1.3
 
     def test_empty_input(self):
         # the late-sharpening subset is empty when SHARPEN_HOURS = 0 (refit crashed on it)
