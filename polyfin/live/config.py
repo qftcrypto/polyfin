@@ -57,10 +57,23 @@ ARMS = {
         # real books, 7 days, ~+14-15% per $ at any repeat rate, 6/7 days positive)
         "strike_rep": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                        "repeat": REPEAT, "flip": None},
-        # paper twin of the live rule: 2 buys at edge >= 0.08, 15 min apart, same side
+        # paper twin of the live rule: 2 buys at edge >= 0.08, 15 min apart, same side,
+        # no new entries 18:00-06:00 ET
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                    "quiet_hours": (18, 6),
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
+        # the live rule before 2026-10-18 (entries at any hour), to measure the pause
+        "strike2_allday": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                           "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                           "flip": None},
+        # strategy v2 (2026-10-18): the live rule (pause included) + day worst-case cap -$30 +
+        # tail hedges (hedges may fire at any hour - they only reduce risk)
+        "strike2_v2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                       "quiet_hours": (18, 6), "worst_cap": 30.0,
+                       "hedge": {"trigger": -20.0, "min_edge": -0.05, "max_per_day": 2, "shares": 5},
+                       "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                       "flip": None},
         # the live rule + portfolio view (2026-10-17, research/strike_portfolio.py): skip a buy
         # that would put the day's ladder worst case below -$30; when the worst case is below
         # -$20, hedge with 5 shares of the strike/side that most raises it (edge >= -0.05),
@@ -112,7 +125,11 @@ ARMS = {
         # research/strike_regime.py); strike2_regime keeps the old model on paper.  Edge 0.05 -> 0.08 on
         # 2026-10-17 (user; research/strike_threshold.py: 0.08 beat 0.05 on books +11.1% vs
         # +4.5% and forward +33.3% vs +7.3% - overlapping days, picked from a sweep).
+        # From 2026-10-18 (user): no new entries 18:00-06:00 ET (research/strike_strategy.py:
+        # evening/overnight entries lost on books and forward; skipping them kept books P&L
+        # ~equal with worst day -$5.74 vs -$17.74, forward +$90 vs +$78).
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                    "quiet_hours": (18, 6),
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
     },

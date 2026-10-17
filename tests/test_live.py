@@ -74,16 +74,18 @@ class TestSlots(unittest.TestCase):
     def test_live_is_strike2_early_only(self):
         from polyfin.live import config as C
         self.assertEqual(C.ARMS["live"], {"strike2": {
-            "min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+            "min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"}, "quiet_hours": (18, 6),
             "repeat": {"spacing_s": 900, "max_buys": 2, "market_cap_usd": 10.0}, "flip": None}})
         self.assertEqual(C.ARMS["live"]["strike2"], C.ARMS["paper"]["strike2"])   # paper twin
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(set(C.ARMS["paper"]),
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
                           "strike_rep", "strike2", "ud_band", "strike2_agree", "strike2_perp",
-                          "strike_rep08", "strike2_05", "strike2_regime", "strike2_hedge"})
+                          "strike_rep08", "strike2_05", "strike2_regime", "strike2_hedge",
+                          "strike2_allday", "strike2_v2"})
         self.assertTrue(all(c["min_edge"] == (0.08 if a in ("strike_rep08", "strike2", "strike2_regime",
-                                                             "strike2_hedge") else 0.05)
+                                                             "strike2_hedge", "strike2_allday",
+                                                             "strike2_v2") else 0.05)
                             for a, c in C.ARMS["paper"].items()))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
                          {"rep_hold": None, "rep_flip10": 0.10})
@@ -270,6 +272,17 @@ class TestLadderDB(unittest.TestCase):
         finally:
             self.conn.execute("DELETE FROM trade.orders WHERE arm IN ('ph', 'ph+h')")
             self.conn.commit()
+
+    def test_quiet_hours(self):
+        from datetime import datetime
+        from polyfin.live.engine import quiet
+        from polyfin.varclock import ET
+        at = lambda h, m=0: datetime(2026, 10, 19, h, m, tzinfo=ET).timestamp()
+        cfg = {"quiet_hours": (18, 6)}
+        self.assertTrue(all(quiet(cfg, at(h)) for h in (18, 21, 23, 0, 3, 5)))
+        self.assertFalse(any(quiet(cfg, at(h)) for h in (6, 9, 12, 15, 17)))
+        self.assertFalse(quiet(cfg, at(17, 59)))
+        self.assertFalse(quiet({}, at(23)))
 
     def test_min_price_floor(self):
         cfg = {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10], "min_price": 0.15}

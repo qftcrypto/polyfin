@@ -56,6 +56,16 @@ def liquid_series(conn) -> set[str]:
     return {s for s, v in rows if v >= C.MIN_SERIES_VOLUME} - C.EXCLUDE_SERIES
 
 
+def quiet(cfg, now: float) -> bool:
+    """True inside an arm's no-new-entries hours, cfg["quiet_hours"] = (from, to) ET hours,
+    e.g. (18, 6): 18:00-06:00 (research/strike_strategy.py: evening/overnight entries lost)."""
+    q = cfg.get("quiet_hours")
+    if not q:
+        return False
+    h = datetime.fromtimestamp(now, ET).hour
+    return (q[0] <= h or h < q[1]) if q[0] > q[1] else (q[0] <= h < q[1])
+
+
 def ladder_centre(ks, ps):
     """Strike where a decreasing P(above K) curve crosses 0.5 (linear interpolation)."""
     for i in range(len(ks) - 1):
@@ -487,7 +497,7 @@ class Trader:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
                 continue
-            if not self._eligible(cfg, s):
+            if not self._eligible(cfg, s) or quiet(cfg, now):
                 continue
             if "max_tau_h" in cfg and s.target_ts - now > cfg["max_tau_h"] * 3600:
                 continue
@@ -591,7 +601,7 @@ class Trader:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
                 continue
-            if not self._eligible(cfg, s):
+            if not self._eligible(cfg, s) or quiet(cfg, now):
                 continue
             st = repeat_state(conn, mode, arm, s.condition_id, slot)
             if st["n"] >= rp["max_buys"]:

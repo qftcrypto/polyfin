@@ -101,6 +101,8 @@ def describe(cfg) -> str:
         parts.append("model with the Hyperliquid perp nowcast for CL=F")
     if cfg.get("model") == "regime":
         parts.append("OLD strikes model (volatility-regime scaling)")
+    if "quiet_hours" in cfg:
+        parts.append("no new entries %02d:00-%02d:00 ET" % tuple(cfg["quiet_hours"]))
     if "worst_cap" in cfg:
         parts.append("skip buys that put the day's worst case below -$%s" % g(cfg["worst_cap"]))
     if "hedge" in cfg:
@@ -125,8 +127,9 @@ def window(cfg) -> str:
     """When the arm may fire, as configured: relative to each market's settlement."""
     late = C.LATE_WINDOW_H
     g = lambda x: ("%.2f" % x).rstrip("0").rstrip(".")
+    q = (", no new entries %02d:00-%02d:00 ET" % tuple(cfg["quiet_hours"])) if cfg.get("quiet_hours") else ""
     if cfg["slots"] == {"early"}:
-        return "from listing until %sh before settlement" % g(late)
+        return "from listing until %sh before settlement%s" % (g(late), q)
     if cfg["slots"] == {"late"}:
         return "last %sh before settlement" % g(min(cfg.get("max_tau_h", late), late))
     return "from listing until %d min before settlement" % (C.MIN_TAU_S // 60)
