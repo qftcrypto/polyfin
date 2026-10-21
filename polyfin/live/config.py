@@ -60,17 +60,23 @@ ARMS = {
         # paper twin of the live rule: 2 buys at edge >= 0.08, 15 min apart, same side,
         # no new entries 18:00-06:00 ET
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
-                    "quiet_hours": (18, 6),
+                    "model": "regime", "quiet_hours": (18, 6),
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
-        # the live rule before 2026-10-18 (entries at any hour), to measure the pause
+        # the live rule on the NEW strikes model (no vol-regime scaling, per-series strike_b)
+        "strike2_flat": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                         "quiet_hours": (18, 6),
+                         "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                         "flip": None},
+        # the live rule without the pause (entries at any hour), to measure the pause
         "strike2_allday": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                           "model": "regime",
                            "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                            "flip": None},
         # strategy v2 (2026-10-18): the live rule (pause included) + day worst-case cap -$30 +
         # tail hedges (hedges may fire at any hour - they only reduce risk)
         "strike2_v2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
-                       "quiet_hours": (18, 6), "worst_cap": 30.0,
+                       "model": "regime", "quiet_hours": (18, 6), "worst_cap": 30.0,
                        "hedge": {"trigger": -20.0, "min_edge": -0.05, "max_per_day": 2, "shares": 5},
                        "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                        "flip": None},
@@ -84,12 +90,7 @@ ARMS = {
                           "hedge": {"trigger": -20.0, "min_edge": -0.05, "max_per_day": 2, "shares": 5},
                           "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                           "flip": None},
-        # the live rule on the OLD strikes model, FROZEN at what live used to 10/16 (regime
-        # scaling gamma 0.5, strike_b 1.3; stage2.REGIME_FROZEN), to measure the change
-        "strike2_regime": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
-                           "model": "regime", "quiet_hours": (18, 6),   # = live, model aside (10/19)
-                           "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
-                           "flip": None},
+        # retired 2026-10-21: strike2_regime (the old model on paper) - live now runs it.
         # the live rule before 2026-10-17 (edge 0.05), kept to measure the change
         "strike2_05": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
@@ -128,8 +129,12 @@ ARMS = {
         # From 2026-10-18 (user): no new entries 18:00-06:00 ET (research/strike_strategy.py:
         # evening/overnight entries lost on books and forward; skipping them kept books P&L
         # ~equal with worst day -$5.74 vs -$17.74, forward +$90 vs +$78).
+        # From 2026-10-21 (user) on the OLD strikes model again, frozen (stage2.REGIME_FROZEN:
+        # vol-regime scaling gamma 0.5, strike_b 1.3).  research/strike_upwide.py, 8 forward
+        # days: old closer than the market in 83% of >= 0.08 disagreements (new 63%); strike2
+        # @0.08 with the pause +$129, 7/8 days (new +$192, 6/8, of which +$139 on 10/16).
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
-                    "quiet_hours": (18, 6),
+                    "model": "regime", "quiet_hours": (18, 6),
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
     },
