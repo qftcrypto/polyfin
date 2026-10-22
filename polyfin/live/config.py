@@ -53,10 +53,6 @@ ARMS = {
         # 0.05-0.15 lost on both price sources - the model overstates long shots there)
         "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                   "min_price": 0.15},
-        # strikes only, with the strikes-sharpened model (2026-10-08, research/strike_repeat.py:
-        # real books, 7 days, ~+14-15% per $ at any repeat rate, 6/7 days positive)
-        "strike_rep": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"},
-                       "repeat": REPEAT, "flip": None},
         # paper twin of the live rule: 2 buys at edge >= 0.08, 15 min apart, same side,
         # no new entries 18:00-06:00 ET
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
@@ -109,10 +105,8 @@ ARMS = {
         "strike2_perp": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"strikes"}, "model": "perp",
                          "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                          "flip": None},
-        # strike_rep at edge >= 0.08 (2026-10-17, research/strike_threshold.py): the one cell
-        # positive without its best 5 markets on both books (+$16) and forward signals (+$26)
-        "strike_rep08": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
-                         "repeat": REPEAT, "flip": None},
+        # retired 2026-10-22 (user): strike_rep and strike_rep08 (repeat buying, <= 10 buys/market):
+        # week of 10/19 -$94 and -$52 - more money on the same daily WTI bet, both ways.
         # retired 2026-10-17: spymeta2 (SPY/META strikes: 0/3 days, -47%; SPY forward Brier
         # worse than the market).  Arms may still name `series` with min_mkt_volume.
         # up/down only, edge in [0.05, 0.10): the one band that came out ~breakeven-positive
