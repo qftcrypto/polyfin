@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- polyfin weekly trader on the LAPTOP (touch markets; disabled on the server, whose disk is
+     shared).  Runs at login and is restarted if it exits - e.g. while the local database is
+     still starting after a reboot (it died unnoticed on 2026-10-07 when the DB container
+     restarted).  Install:
+       cp deploy/com.polyfin.weekly-trader.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.polyfin.weekly-trader.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.polyfin.weekly-trader</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/mm/MyDev/MyCode/polytrade/polyfin/.venv/bin/python</string>
+    <string>-m</string><string>polyfin.weekly.trader</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/mm/MyDev/MyCode/polytrade/polyfin</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>60</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/mm/Library/Logs/polyfin-weekly-trader.log</string>
+  <key>StandardErrorPath</key><string>/Users/mm/Library/Logs/polyfin-weekly-trader.log</string>
+</dict>
+</plist>
