@@ -112,6 +112,18 @@ ARMS = {
         # up/down only, edge in [0.05, 0.10): the one band that came out ~breakeven-positive
         # (research/ud_threshold.py, 2026-10-08) - kept on record as an option, not a rule
         "ud_band": {"min_edge": 0.05, "max_edge": 0.10, "slots": {"early"}, "kinds": {"updown"}},
+        # Test 1 (user, 2026-10-23; decide 2026-11-06): rep_hold on up/down at asks
+        # 0.10-0.40 only.  rep_hold's up/down profit 10/08-10/23 (+$1,276) all came from
+        # fills at 0.10-0.40 (0.40-0.70 lost) - but +$1,553 of it in one week (10/12-10/16),
+        # and the band was picked from those same days, so it must hold on NEW days.
+        "rep_cheap": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"updown"}, "repeat": REPEAT,
+                      "flip": None, "min_price": 0.10, "max_price": 0.40},
+        # Test 2 (user, 2026-10-23; decide 2026-11-06): rep_hold's rule as a MAKER - a
+        # resting bid at model price - 0.05 (never at/above the ask), no taker fee, filled
+        # only when a later book's best ask is BELOW the bid (a seller traded through it).
+        # Live paid $18 of fees on $32 gross; makers pay none.  Paper only.
+        "mk_hold": {"min_edge": 0.05, "slots": {"early"}, "maker": True, "repeat": REPEAT,
+                    "flip": None},
     },
     "live": {
         # 2026-10-08 (user): strikes only, 2 buys, 15 min apart, same side, with the

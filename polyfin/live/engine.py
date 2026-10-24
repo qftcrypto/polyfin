@@ -207,8 +207,8 @@ def repeat_state(conn, mode: str, arm: str, cid: str, slot: str) -> dict:
     """Buys held in one market slot of a repeat arm, and what limits the next one."""
     rows = conn.execute(
         "SELECT leg, side, status, created_at, shares_filled, avg_price, fee, shares_req, "
-        "limit_price FROM trade.orders WHERE mode = %s AND arm = %s AND condition_id = %s "
-        "AND slot = %s ORDER BY created_at",
+        "limit_price, filled_at FROM trade.orders WHERE mode = %s AND arm = %s "
+        "AND condition_id = %s AND slot = %s ORDER BY created_at",
         (mode, arm, cid, slot)).fetchall()
     conn.commit()
     held = [r for r in rows if r[2] in OPEN_STATUSES]
@@ -216,6 +216,7 @@ def repeat_state(conn, mode: str, arm: str, cid: str, slot: str) -> dict:
                                                      else 0.0) for r in held)
     return {"n": len(held), "last_side": held[-1][1] if held else None,
             "last_buy": held[-1][3] if held else None, "cost": cost,
+            "last_fill": max((r[9] for r in held if r[9] is not None), default=None),
             "next_leg": max((r[0] or 0 for r in rows), default=0) + 1,
             "last_nofill": max((r[3] for r in rows if r[2] == "nofill"), default=None)}
 
@@ -357,7 +358,10 @@ class Trader:
         variants = {k: [(s, *alt.get(s.condition_id, (p, f))) for s, p, f in priced]
                     for k, alt in self.alts.items()}
         for arm, cfg in C.ARMS[mode].items():
-            run = self._run_repeat_arm if "repeat" in cfg else self._run_arm
+            if cfg.get("maker") and mode != "paper":
+                continue                                # maker arms are a paper test only
+            run = (self._run_maker_arm if cfg.get("maker") else
+                   self._run_repeat_arm if "repeat" in cfg else self._run_arm)
             pr = variants[cfg["model"]] if cfg.get("model") else priced
             balance = run(mode, arm, cfg, pr, tokens, books, now, balance)
 
@@ -597,6 +601,8 @@ class Trader:
         conn, rp = self.conn, cfg["repeat"]
         risk = risk_state(conn, mode, now, arm)
         entered = 0
+        min_px = cfg.get("min_price", C.MIN_PRICE)      # an arm may narrow the price range
+        max_px = cfg.get("max_price", C.MAX_PRICE)
         for s, p, f in priced:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
@@ -616,7 +622,7 @@ class Trader:
                 if not bk or not bk["asks"]:
                     continue
                 ask = bk["asks"][0][0]
-                if not C.MIN_PRICE <= ask <= C.MAX_PRICE:
+                if not min_px <= ask <= max_px:
                     continue
                 if st["last_side"] is None or side == st["last_side"]:
                     need = cfg["min_edge"]
@@ -671,6 +677,100 @@ class Trader:
         log.info("%s/%s: %d markets priced, %d entries | today %d orders, open $%.2f, pnl $%+.2f",
                  mode, arm, len(priced), entered, risk["orders_today"], risk["open_usd"],
                  risk["pnl_today"])
+        return balance
+
+    def _run_maker_arm(self, mode, arm, cfg, priced, tokens, books, now, balance):
+        """Paper maker test: one resting bid per market, at model price - min_edge in whole
+        cents and at least 1c below the best ask (it never takes), on the side the model
+        likes more than the market does (largest p - ask); after the first fill, that side
+        only (flip None).
+
+        A resting bid fills - at its own price, no fee - when a later book's best ask is
+        BELOW it: a seller traded through it, which a real bid there could not survive.
+        That misses fills where sellers hit the bid without moving the ask, so it
+        under-counts fills, but never counts one that could not have happened.  Fills
+        follow cfg["repeat"]: >= spacing_s apart (from the last FILL), <= max_buys,
+        <= market_cap_usd.  Status 'resting' while posted, 'cancelled' when pulled.
+        """
+        conn, rp = self.conn, cfg["repeat"]
+        posted = filled = 0
+        # 1. bids resting since the last cycle: did a seller trade through them?
+        resting = {}
+        for oid, cid, tok, lim, side, label in conn.execute(
+                "SELECT id, condition_id, token_id, limit_price, side, series_slug FROM trade.orders "
+                "WHERE mode = %s AND arm = %s AND status = 'resting'", (mode, arm)).fetchall():
+            bk = books.get(tok)
+            if bk and bk["asks"] and bk["asks"][0][0] < lim - 1e-9:
+                conn.execute("UPDATE trade.orders SET status = 'filled', shares_filled = shares_req, "
+                             "avg_price = limit_price, fee = 0, filled_at = %s WHERE id = %s",
+                             (int(now), oid))
+                filled += 1
+                log.info("%s/%s maker fill %s %s @ %.2f (ask now %.2f)", mode, arm, label, side,
+                         lim, bk["asks"][0][0])
+            else:
+                resting[cid] = (oid, side, lim)
+        conn.commit()
+        # 2. the bid each market should have now
+        want = {}
+        for s, p, f in priced:
+            slot = slot_for(s.target_ts - now)
+            if slot not in cfg["slots"] or not self._eligible(cfg, s) or quiet(cfg, now):
+                continue
+            st = repeat_state(conn, mode, arm, s.condition_id, slot)
+            if st["n"] >= rp["max_buys"]:
+                continue
+            if st["last_fill"] is not None and now - st["last_fill"] < rp["spacing_s"]:
+                continue
+            best = None
+            for side, tok, ps in (("yes", s.token_yes, p), ("no", tokens[s.condition_id], 1 - p)):
+                if st["last_side"] is not None and side != st["last_side"] and cfg["flip"] is None:
+                    continue
+                bk = books.get(tok)
+                if not bk or not bk["asks"]:
+                    continue
+                ask = bk["asks"][0][0]
+                bid = min(math.floor((ps - cfg["min_edge"]) * 100 + 1e-9),
+                          round(ask * 100) - 1) / 100
+                if not C.MIN_PRICE <= bid <= C.MAX_PRICE:
+                    continue
+                if best is None or ps - ask > best[0]:
+                    best = (ps - ask, side, tok, ps, bk, bid)
+            if best is None:
+                continue
+            _, side, tok, ps, bk, bid = best
+            shares = shares_for(bid)
+            if not shares or st["cost"] + shares * bid > rp["market_cap_usd"] + 1e-9:
+                continue
+            want[s.condition_id] = (s, side, tok, ps, bk, bid, shares, f, slot, st["next_leg"])
+        # 3. keep bids that are still right, pull the rest, post what is missing
+        kept = 0
+        for cid, (oid, side, lim) in resting.items():
+            w = want.get(cid)
+            if w is not None and w[1] == side and abs(w[5] - lim) < 1e-9:
+                del want[cid]
+                kept += 1
+                continue
+            conn.execute("UPDATE trade.orders SET status = 'cancelled', error = %s WHERE id = %s",
+                         ("reprice" if w is not None else "no longer wanted", oid))
+        conn.commit()
+        for cid, (s, side, tok, ps, bk, bid, shares, f, slot, leg) in want.items():
+            feats = {"xr": f[0], "xn": f[1], "v": f[2], "R": f[3]}
+            try:
+                conn.execute(
+                    "INSERT INTO trade.orders (created_at, mode, condition_id, series_slug, kind, "
+                    "strike, side, token_id, target_ts, tau_h, model_p, best_bid, best_ask, ask_size,"
+                    " edge, limit_price, shares_req, asks, features, slot, arm, leg, status) VALUES "
+                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'resting')",
+                    (int(now), mode, cid, s.series_slug, s.kind, s.strike, side, tok, s.target_ts,
+                     (s.target_ts - now) / 3600, ps, bk["bids"][0][0] if bk["bids"] else None,
+                     bk["asks"][0][0], bk["asks"][0][1], ps - bid, bid, shares,
+                     json.dumps(bk["asks"][:10]), json.dumps(feats), slot, arm, leg))
+                conn.commit()
+                posted += 1
+            except psycopg2.Error:
+                conn.rollback()
+        log.info("%s/%s: %d fills, %d bids resting (%d new or repriced)", mode, arm, filled,
+                 kept + posted, posted)
         return balance
 
     def _refresh(self, tok, ps, need, s, side, arm):

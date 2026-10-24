@@ -91,6 +91,9 @@ def describe(cfg) -> str:
         parts.append("repeat every %d min, <= %d buys, <= $%s/mkt%s" % (
             rp["spacing_s"] // 60, rp["max_buys"], g(rp["market_cap_usd"]),
             "" if cfg.get("flip") is None else ", flip at %s" % g(cfg["flip"])))
+    if cfg.get("maker"):
+        parts.append("MAKER: resting bid at model - %s, filled when the ask trades through it, no fee"
+                     % g(cfg["min_edge"]))
     parts.append("slot " + "+".join(sorted(cfg["slots"])))
     if "kinds" in cfg:
         parts.append("only " + "+".join(dict(KINDS).get(k, k) for k in sorted(cfg["kinds"])))
@@ -111,7 +114,9 @@ def describe(cfg) -> str:
             hg["shares"], g(-hg["trigger"]), g(hg["min_edge"]), hg["max_per_day"]))
     if "centre_tol" in cfg:
         parts.append("model and market centres within $%s" % g(cfg["centre_tol"]))
-    if "min_price" in cfg:
+    if "max_price" in cfg:
+        parts.append("ask %s-%s" % (g(cfg.get("min_price", C.MIN_PRICE)), g(cfg["max_price"])))
+    elif "min_price" in cfg:
         parts.append("ask >= %s" % g(cfg["min_price"]))
     if "max_tau_h" in cfg:
         parts.append("last %sh" % g(cfg["max_tau_h"]))
@@ -119,7 +124,8 @@ def describe(cfg) -> str:
         parts.append("edge held %ds" % cfg["confirm_s"])
     if "blend" in cfg:
         parts.append("model+market blend %s" % "/".join(g(w) for w in cfg["blend"]))
-    parts.append("$%s/buy, <= ask + %dc" % (g(C.BUDGET_USD), round(100 * C.MAX_SLIP)))
+    parts.append("$%s/buy" % g(C.BUDGET_USD) if cfg.get("maker") else
+                 "$%s/buy, <= ask + %dc" % (g(C.BUDGET_USD), round(100 * C.MAX_SLIP)))
     return ", ".join(parts)
 
 

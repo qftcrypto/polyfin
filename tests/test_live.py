@@ -83,7 +83,7 @@ class TestSlots(unittest.TestCase):
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
                           "strike2", "ud_band", "strike2_agree", "strike2_perp",
                           "strike2_05", "strike2_flat", "strike2_hedge",
-                          "strike2_allday", "strike2_v2"})
+                          "strike2_allday", "strike2_v2", "rep_cheap", "mk_hold"})
         self.assertTrue(all(c["min_edge"] == (0.08 if a in ("strike2", "strike2_flat",
                                                              "strike2_hedge", "strike2_allday",
                                                              "strike2_v2") else 0.05)
@@ -350,6 +350,70 @@ class TestRepeatDB(TestLadderDB):
         for k in range(14):                              # $30 cap: 5 shares x 0.80 = $4+ each
             sides = self.run_arm("rep_hold", 0.95, 0.80, 0.25, t + k * 901)
         self.assertEqual(len(sides), 7)                  # 7 x ~$4.03 = $28.2; an 8th > $30
+
+
+    def test_price_band(self):
+        t = self.now
+        self.assertEqual(self.run_arm("rep_cheap", 0.60, 0.50, 0.60, t), [])          # Yes 0.50 > 0.40
+        self.assertEqual(self.run_arm("rep_cheap", 0.15, 0.90, 0.08, t), [])          # No 0.08 < 0.10
+        self.assertEqual(self.run_arm("rep_cheap", 0.45, 0.35, 0.70, t), ["yes"])     # inside the band
+        self.assertEqual(self.run_arm("rep_cheap", 0.60, 0.45, 0.60, t + 901), ["yes"])  # Yes left the band
+
+
+class TestMakerDB(TestLadderDB):
+    """mk_hold: one resting bid, filled only when the ask trades through it."""
+
+    def run_mk(self, p, yes_bid, yes_ask, no_bid, no_ask, at):
+        from polyfin.live import config as C
+        books = {"tokY": {"bids": [(yes_bid, 100.0)], "asks": [(yes_ask, 100.0)], "ts": 0},
+                 "tokN": {"bids": [(no_bid, 100.0)], "asks": [(no_ask, 100.0)], "ts": 0}}
+        self.trader._run_maker_arm("paper", "mk_hold", C.ARMS["paper"]["mk_hold"],
+                                   [(self.spec, p, (0, 0, 1e-4, 1))], {self.cid: "tokN"},
+                                   books, at, None)
+        return [(st, sd, round(lim, 2), sh) for st, sd, lim, sh in self.conn.execute(
+            "SELECT status, side, limit_price, shares_filled FROM trade.orders "
+            "WHERE condition_id = %s AND arm = 'mk_hold' ORDER BY id", (self.cid,)).fetchall()]
+
+    def test_posts_below_the_ask_on_the_model_side(self):
+        # p_yes 0.55 vs Yes ask 0.48 (No 0.54 vs p_no 0.45): bid Yes at 0.55 - 0.05 = 0.50,
+        # but never at/above the ask -> 0.47
+        self.assertEqual(self.run_mk(0.55, 0.40, 0.48, 0.50, 0.54, self.now), [("resting", "yes", 0.47, 0)])
+        # wide ask: bid sits at model - 0.05
+        self.assertEqual(self.run_mk(0.55, 0.40, 0.60, 0.38, 0.62, self.now + 30)[-1][:3],
+                         ("resting", "yes", 0.50))
+
+    def test_fill_only_on_trade_through_then_spacing(self):
+        t = self.now
+        st = lambda rows: [r[0] for r in rows]
+        self.run_mk(0.55, 0.40, 0.60, 0.38, 0.62, t)                       # bid Yes 0.50
+        # the ask falls to 0.50 = the bid: no fill; the bid is re-set 1c below the ask
+        rows = self.run_mk(0.55, 0.40, 0.50, 0.38, 0.62, t + 30)
+        self.assertEqual([r[:3] for r in rows], [("cancelled", "yes", 0.50), ("resting", "yes", 0.49)])
+        rows = self.run_mk(0.55, 0.40, 0.48, 0.38, 0.62, t + 60)          # ask below the bid: fill
+        self.assertEqual(rows[1], ("filled", "yes", 0.49, 6.0))           # $3 / 0.49 -> 6 shares
+        fee, avg = self.conn.execute("SELECT fee, avg_price FROM trade.orders WHERE condition_id=%s "
+                                     "AND status='filled'", (self.cid,)).fetchone()
+        self.conn.commit()
+        self.assertEqual((fee, round(avg, 2)), (0, 0.49))
+        # no new bid within 15 min of the fill; one after
+        self.assertEqual(st(self.run_mk(0.55, 0.40, 0.60, 0.38, 0.62, t + 120)), ["cancelled", "filled"])
+        self.assertEqual(st(self.run_mk(0.55, 0.40, 0.60, 0.38, 0.62, t + 60 + 901)),
+                         ["cancelled", "filled", "resting"])
+
+    def test_reprice_and_hold_side(self):
+        t = self.now
+        self.run_mk(0.55, 0.40, 0.60, 0.38, 0.62, t)                       # Yes 0.50
+        rows = self.run_mk(0.60, 0.40, 0.70, 0.28, 0.62, t + 30)          # model up: Yes 0.55
+        self.assertEqual([r[:3] for r in rows], [("cancelled", "yes", 0.50), ("resting", "yes", 0.55)])
+        self.run_mk(0.60, 0.40, 0.50, 0.28, 0.62, t + 60)                 # ask 0.50 < 0.55: fill
+        # model now prefers No, but the arm holds Yes: the next bid (after spacing) is Yes
+        rows = self.run_mk(0.20, 0.10, 0.30, 0.60, 0.70, t + 60 + 901)
+        self.assertEqual([r[:3] for r in rows if r[0] in ("filled", "resting")],
+                         [("filled", "yes", 0.55), ("resting", "yes", 0.15)])     # 0.20 - 0.05
+
+    def test_maker_never_runs_live(self):
+        from polyfin.live import config as C
+        self.assertFalse(any(cfg.get("maker") for cfg in C.ARMS["live"].values()))
 
 
 class TestControlAliases(unittest.TestCase):
