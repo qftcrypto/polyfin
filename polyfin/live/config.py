@@ -139,7 +139,11 @@ ARMS = {
         # vol-regime scaling gamma 0.5, strike_b 1.3).  research/strike_upwide.py, 8 forward
         # days: old closer than the market in 83% of >= 0.08 disagreements (new 63%); strike2
         # @0.08 with the pause +$129, 7/8 days (new +$192, 6/8, of which +$139 on 10/16).
+        # From 2026-11-05 (user): WTI only.  SPY strikes crossed MIN_SERIES_VOLUME that
+        # morning and live bought them untested (~$90, about -$50 marked by 13:43 ET);
+        # spymeta2 lost 31% on SPY/META strikes.  The paper twin keeps SPY.
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                    "series": {"wti-daily-close-uo"},
                     "model": "regime", "quiet_hours": (18, 6),
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},

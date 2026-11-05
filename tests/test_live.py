@@ -75,9 +75,10 @@ class TestSlots(unittest.TestCase):
         from polyfin.live import config as C
         self.assertEqual(C.ARMS["live"], {"strike2": {
             "min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"}, "model": "regime",
-            "quiet_hours": (18, 6),
+            "series": {"wti-daily-close-uo"}, "quiet_hours": (18, 6),
             "repeat": {"spacing_s": 900, "max_buys": 2, "market_cap_usd": 10.0}, "flip": None}})
-        self.assertEqual(C.ARMS["live"]["strike2"], C.ARMS["paper"]["strike2"])   # paper twin
+        twin = {k: v for k, v in C.ARMS["live"]["strike2"].items() if k != "series"}
+        self.assertEqual(twin, C.ARMS["paper"]["strike2"])     # paper twin (keeps SPY)
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(set(C.ARMS["paper"]),
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
