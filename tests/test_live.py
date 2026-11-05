@@ -88,10 +88,12 @@ class TestSlots(unittest.TestCase):
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
                           "strike2", "ud_band", "strike2_agree", "strike2_perp",
                           "strike2_05", "strike2_flat", "strike2_hedge",
-                          "strike2_allday", "strike2_v2", "rep_cheap", "mk_hold"})
+                          "strike2_allday", "strike2_v2", "rep_cheap", "mk_hold", "strike2_calm"})
+        calm = {k: v for k, v in C.ARMS["paper"]["strike2_calm"].items() if k != "calm"}
+        self.assertEqual(calm, C.ARMS["live"]["strike2"])     # live rule + calm filter only
         self.assertTrue(all(c["min_edge"] == (0.08 if a in ("strike2", "strike2_flat",
                                                              "strike2_hedge", "strike2_allday",
-                                                             "strike2_v2") else 0.05)
+                                                             "strike2_v2", "strike2_calm") else 0.05)
                             for a, c in C.ARMS["paper"].items()))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
                          {"rep_hold": None, "rep_flip10": 0.10})
@@ -560,3 +562,37 @@ class TestSpeedGuard(unittest.TestCase):
         self.assertFalse(t._too_fast({}, S("SPY"), 0))         # arm without the guard
         t._too_fast(cfg, S("SPY"), 0)
         self.assertEqual(G.calls, 3)                           # once per symbol per cycle
+
+
+class TestCalmFilter(unittest.TestCase):
+    """live/calm.py: no entries when ^OVX closed above its 20-day average (2026-11-05)."""
+
+    def _closes(self, last):
+        from datetime import date, timedelta
+        d0 = date(2026, 10, 1)
+        out = [(d0 + timedelta(days=i), 50.0) for i in range(20)]
+        return out + [(d0 + timedelta(days=20), last), (date(2026, 11, 5), 99.0)]   # today ignored
+
+    def test_rule(self):
+        from datetime import date
+        from polyfin.live.calm import is_calm
+        today = date(2026, 11, 5)
+        self.assertTrue(is_calm(self._closes(49.0), today)[0])
+        self.assertTrue(is_calm(self._closes(50.0), today)[0])           # at the average: calm
+        self.assertFalse(is_calm(self._closes(51.0), today)[0])
+        self.assertFalse(is_calm(self._closes(49.0)[5:], today)[0])      # < 21 closes: unknown
+
+    def test_filter_caches_daily_and_fails_closed(self):
+        from datetime import datetime
+        from polyfin.live.calm import CalmFilter
+        from polyfin.varclock import ET
+        calls = []
+        def fetch(sym):
+            calls.append(sym); return self._closes(49.0)
+        f = CalmFilter(fetch)
+        now = datetime(2026, 11, 5, 9, 0, tzinfo=ET).timestamp()
+        self.assertTrue(f.ok("^OVX", now)); self.assertTrue(f.ok("^OVX", now + 600))
+        self.assertEqual(len(calls), 1)
+        def boom(sym):
+            raise OSError("down")
+        self.assertFalse(CalmFilter(boom).ok("^OVX", now))

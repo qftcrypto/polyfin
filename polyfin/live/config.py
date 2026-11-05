@@ -59,6 +59,15 @@ ARMS = {
                     "model": "regime", "quiet_hours": (18, 6), "speed_guard": 2.0,
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
+        # Calm-day test (user, 2026-11-05; decide after 2 weeks, ~2026-11-19): the live rule
+        # (WTI only, guard included) but no entries on days when ^OVX closed above its
+        # 20-day average the night before (live/calm.py).  Live WTI 10/09-11/04 made +$98
+        # on 13 calm days and -$87 on 6 wild ones (hindsight); OVX split it only weakly.
+        "strike2_calm": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
+                         "series": {"wti-daily-close-uo"}, "calm": "^OVX",
+                         "model": "regime", "quiet_hours": (18, 6), "speed_guard": 2.0,
+                         "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
+                         "flip": None},
         # the live rule on the NEW strikes model (no vol-regime scaling, per-series strike_b)
         "strike2_flat": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
                          "quiet_hours": (18, 6),

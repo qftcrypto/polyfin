@@ -36,6 +36,7 @@ from .control import effective, set_mode
 from .executor import PaperExecutor
 from .fees import fee_per_share
 from .sizing import exec_limit, shares_for
+from .calm import CalmFilter
 from .speed import SpeedGuard
 
 log = logging.getLogger("trader")
@@ -240,6 +241,7 @@ class Trader:
         self.params_mtime = None
         self.params = self._params()
         self.speed = SpeedGuard()
+        self.calm = CalmFilter()
         self.speed_now: dict = {}       # symbol -> last-hour vol / normal, this cycle
 
     def _init_chain(self) -> None:
@@ -520,6 +522,8 @@ class Trader:
                 continue
             if not self._eligible(cfg, s) or quiet(cfg, now) or self._too_fast(cfg, s, now):
                 continue
+            if "calm" in cfg and not self.calm.ok(cfg["calm"], now):
+                continue
             if "max_tau_h" in cfg and s.target_ts - now > cfg["max_tau_h"] * 3600:
                 continue
             if "blend" in cfg:
@@ -625,6 +629,8 @@ class Trader:
             if slot not in cfg["slots"]:
                 continue
             if not self._eligible(cfg, s) or quiet(cfg, now) or self._too_fast(cfg, s, now):
+                continue
+            if "calm" in cfg and not self.calm.ok(cfg["calm"], now):
                 continue
             st = repeat_state(conn, mode, arm, s.condition_id, slot)
             if st["n"] >= rp["max_buys"]:

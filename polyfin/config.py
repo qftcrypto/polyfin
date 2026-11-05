@@ -95,7 +95,7 @@ PERP_NOWCAST = {"CL=F": "HL:CL"}
 PERP_MAX_AGE_S = 180         # the perp's own bar must be this fresh, else no correction
 
 # Recorded as model features only; no market settles on them.
-CONTEXT_SYMBOLS = ["ES=F", "NQ=F", "^VIX", "^NDX"]
+CONTEXT_SYMBOLS = ["ES=F", "NQ=F", "^VIX", "^NDX", "^OVX"]   # ^OVX: research (2026-11-05)
 
 
 def yahoo_symbols() -> list[str]:
