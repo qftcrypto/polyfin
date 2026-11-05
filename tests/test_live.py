@@ -1,5 +1,9 @@
 """Offline tests for trader sizing, fees, paper fills and the control ratchet."""
+import math
+import types
 import unittest
+
+import numpy as np
 
 from polyfin.live.control import RANK
 from polyfin.live.executor import PaperExecutor
@@ -75,7 +79,7 @@ class TestSlots(unittest.TestCase):
         from polyfin.live import config as C
         self.assertEqual(C.ARMS["live"], {"strike2": {
             "min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"}, "model": "regime",
-            "series": {"wti-daily-close-uo"}, "quiet_hours": (18, 6),
+            "series": {"wti-daily-close-uo"}, "quiet_hours": (18, 6), "speed_guard": 2.0,
             "repeat": {"spacing_s": 900, "max_buys": 2, "market_cap_usd": 10.0}, "flip": None}})
         twin = {k: v for k, v in C.ARMS["live"]["strike2"].items() if k != "series"}
         self.assertEqual(twin, C.ARMS["paper"]["strike2"])     # paper twin (keeps SPY)
@@ -496,3 +500,63 @@ class TestLateArmsDB(TestLadderDB):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSpeedGuard(unittest.TestCase):
+    """live/speed.py: last-hour vol vs the normal hour (user, 2026-11-05)."""
+
+    def _calm_days(self, today, days=25, step=1e-4):
+        from datetime import datetime, timedelta
+        from polyfin.varclock import ET
+        ts, px, d, p = [], [], today, 100.0
+        for _ in range(days):
+            d -= timedelta(days=1)
+            if d.weekday() >= 5:
+                continue
+            t0 = datetime(d.year, d.month, d.day, 6, 0, tzinfo=ET).timestamp()
+            for k in range(13 * 60):                    # 06:00-19:00, alternating +-step
+                p *= math.exp(step if k % 2 else -step)
+                ts.append(t0 + 60 * k); px.append(p)
+        o = np.argsort(ts)
+        return np.array(ts)[o], np.array(px)[o]
+
+    def test_hour_vol(self):
+        from polyfin.live.speed import hour_vol
+        ts = np.arange(0, 7200, 60.0); px = 100 * np.exp(np.r_[0, np.cumsum(np.full(119, 0.001))])
+        self.assertAlmostEqual(hour_vol(ts, px, 7140.0), 0.001 * math.sqrt(60), places=9)
+        self.assertTrue(math.isnan(hour_vol(ts, px, -10.0)))
+
+    def test_normal_and_ratio(self):
+        from datetime import date, datetime
+        from polyfin.live.speed import SpeedGuard, normal_hour_vol
+        from polyfin.varclock import ET
+        today = date(2026, 11, 5)
+        ts, px = self._calm_days(today)
+        self.assertAlmostEqual(normal_hour_vol(ts, px, today), 1e-4 * math.sqrt(60), places=9)
+        self.assertTrue(math.isnan(normal_hour_vol(ts[:100], px[:100], today)))   # < 8 days
+        now = datetime(2026, 11, 5, 11, 0, tzinfo=ET).timestamp()
+        t_today = now - 3 * 3600 + 60 * np.arange(1, 181)
+        for step, want in ((1e-4, 1.0), (5e-4, 5.0)):
+            p_today = px[-1] * np.exp(np.cumsum(np.where(np.arange(180) % 2, step, -step)))
+            allts, allpx = np.r_[ts, t_today], np.r_[px, p_today]
+            g = SpeedGuard()
+            g._bars = lambda conn, sym, since: (allts[allts >= since], allpx[allts >= since])
+            self.assertAlmostEqual(g.ratio(None, "SPY", now), want, places=6)
+
+    def test_too_fast_blocks_only_guarded_arms(self):
+        from polyfin.live.engine import Trader
+        t = Trader.__new__(Trader)
+        t.speed_now = {}
+        class G:
+            calls = 0
+            def ratio(self, conn, sym, now):
+                G.calls += 1; return {"SPY": 3.0, "CL=F": 1.2}.get(sym, float("nan"))
+        t.speed, t.conn = G(), None
+        S = lambda sym: types.SimpleNamespace(symbol=sym)
+        cfg = {"speed_guard": 2.0}
+        self.assertTrue(t._too_fast(cfg, S("SPY"), 0))
+        self.assertFalse(t._too_fast(cfg, S("CL=F"), 0))
+        self.assertFalse(t._too_fast(cfg, S("META"), 0))      # unknown -> no block
+        self.assertFalse(t._too_fast({}, S("SPY"), 0))         # arm without the guard
+        t._too_fast(cfg, S("SPY"), 0)
+        self.assertEqual(G.calls, 3)                           # once per symbol per cycle

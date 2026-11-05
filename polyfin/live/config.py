@@ -56,7 +56,7 @@ ARMS = {
         # paper twin of the live rule: 2 buys at edge >= 0.08, 15 min apart, same side,
         # no new entries 18:00-06:00 ET
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
-                    "model": "regime", "quiet_hours": (18, 6),
+                    "model": "regime", "quiet_hours": (18, 6), "speed_guard": 2.0,
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
         # the live rule on the NEW strikes model (no vol-regime scaling, per-series strike_b)
@@ -142,9 +142,11 @@ ARMS = {
         # From 2026-11-05 (user): WTI only.  SPY strikes crossed MIN_SERIES_VOLUME that
         # morning and live bought them untested (~$90, about -$50 marked by 13:43 ET);
         # spymeta2 lost 31% on SPY/META strikes.  The paper twin keeps SPY.
+        # From 2026-11-05 (user): speed_guard 2.0 - no new entries while the underlying's
+        # last hour moved > 2x its normal hour (live/speed.py; insurance, not an edge).
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
                     "series": {"wti-daily-close-uo"},
-                    "model": "regime", "quiet_hours": (18, 6),
+                    "model": "regime", "quiet_hours": (18, 6), "speed_guard": 2.0,
                     "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                     "flip": None},
     },

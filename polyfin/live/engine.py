@@ -36,6 +36,7 @@ from .control import effective, set_mode
 from .executor import PaperExecutor
 from .fees import fee_per_share
 from .sizing import exec_limit, shares_for
+from .speed import SpeedGuard
 
 log = logging.getLogger("trader")
 
@@ -238,6 +239,8 @@ class Trader:
         self.seen: dict = {}            # confirm arms: (arm, cid, side, leg) -> first seen ts
         self.params_mtime = None
         self.params = self._params()
+        self.speed = SpeedGuard()
+        self.speed_now: dict = {}       # symbol -> last-hour vol / normal, this cycle
 
     def _init_chain(self) -> None:
         """Redemption fallback only; trading works without it (auto-redeem)."""
@@ -351,6 +354,7 @@ class Trader:
         conn.commit()
         books = fetch_books([t for s, _, _ in priced for t in (s.token_yes, tokens[s.condition_id])])
         self.centres = ladder_centres(priced, books)
+        self.speed_now = {}
         if self.launch_mode == "paper":                # one writer: the paper process
             self._log_signals(priced, tokens, books, now)
 
@@ -364,6 +368,19 @@ class Trader:
                    self._run_repeat_arm if "repeat" in cfg else self._run_arm)
             pr = variants[cfg["model"]] if cfg.get("model") else priced
             balance = run(mode, arm, cfg, pr, tokens, books, now, balance)
+
+    def _too_fast(self, cfg, s, now) -> bool:
+        """cfg["speed_guard"] = N: no new entries while s.symbol's last hour moved more
+        than N x its normal hour (speed.py).  Unknown ratio -> no block."""
+        n = cfg.get("speed_guard")
+        if not n:
+            return False
+        if s.symbol not in self.speed_now:
+            r = self.speed.ratio(self.conn, s.symbol, now)
+            self.speed_now[s.symbol] = r
+            if r > n:
+                log.info("speed guard: %s last hour %.1fx normal - no new entries", s.symbol, r)
+        return self.speed_now[s.symbol] > n
 
     def _eligible(self, cfg, s) -> bool:
         """Market filters an arm may set: kinds, an explicit series list (traded even when
@@ -501,7 +518,7 @@ class Trader:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
                 continue
-            if not self._eligible(cfg, s) or quiet(cfg, now):
+            if not self._eligible(cfg, s) or quiet(cfg, now) or self._too_fast(cfg, s, now):
                 continue
             if "max_tau_h" in cfg and s.target_ts - now > cfg["max_tau_h"] * 3600:
                 continue
@@ -607,7 +624,7 @@ class Trader:
             slot = slot_for(s.target_ts - now)
             if slot not in cfg["slots"]:
                 continue
-            if not self._eligible(cfg, s) or quiet(cfg, now):
+            if not self._eligible(cfg, s) or quiet(cfg, now) or self._too_fast(cfg, s, now):
                 continue
             st = repeat_state(conn, mode, arm, s.condition_id, slot)
             if st["n"] >= rp["max_buys"]:
