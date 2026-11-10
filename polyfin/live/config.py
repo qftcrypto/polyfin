@@ -34,13 +34,10 @@ ARMS = {
         # Retired 2026-10-08 (operator): base, confirm, e10, e15, ladder, ladder2, rep_flip and
         # late_blend.  Their records stay in trade.orders (the 10/22 check reads them); the
         # engine still supports rungs, confirm_s and blend.
-        # repeat buying (research/repeat.py, research/hedge.py): another $3 every
-        # time an edge >= min_edge persists, >= 15 min apart, <= 10 buys and <= $30
-        # cost per market.  `flip` = edge the OTHER side (vs the latest buy) needs
-        # before switching to it; None = never switch.  A flip therefore always
-        # needs the model's agreement, never the market move alone.
-        "rep_hold": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": None},
-        "rep_flip10": {"min_edge": 0.05, "slots": {"early"}, "repeat": REPEAT, "flip": 0.10},
+        # Retired 2026-11-10 (user): rep_hold (-$1,104 since 10/26), rep_flip10 (-$1,077),
+        # min15 (-$380), and the 11-06 tests rep_cheap (-27.9%, 2/11 days) and mk_hold
+        # (-18.5%, 1/11 days) - both failed the pre-registered check.  The engine still
+        # supports repeat/flip, min/max_price and maker arms (tests keep their configs).
         # Late slot, last hour only (2026-10-02): late, the model is worse than the market
         # 1-3h out but better in the last hour.
         "late_1h": {"min_edge": 0.05, "slots": {"late"}, "max_tau_h": 1.0},
@@ -49,10 +46,6 @@ ARMS = {
         # at >= 0.50 so far about breakeven (live -8.4%, paper +0.8%) - measured here cleanly
         "fav50": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
                   "min_price": 0.50},
-        # the same two buys with a 0.15 price floor (research/dust.py, 2026-10-06: asks
-        # 0.05-0.15 lost on both price sources - the model overstates long shots there)
-        "min15": {"min_edge": 0.05, "slots": {"early"}, "rungs": [0.05, 0.10],
-                  "min_price": 0.15},
         # paper twin of the live rule: 2 buys at edge >= 0.08, 15 min apart, same side,
         # no new entries 18:00-06:00 ET
         "strike2": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
@@ -131,18 +124,6 @@ ARMS = {
         # up/down only, edge in [0.05, 0.10): the one band that came out ~breakeven-positive
         # (research/ud_threshold.py, 2026-10-08) - kept on record as an option, not a rule
         "ud_band": {"min_edge": 0.05, "max_edge": 0.10, "slots": {"early"}, "kinds": {"updown"}},
-        # Test 1 (user, 2026-10-23; decide 2026-11-06): rep_hold on up/down at asks
-        # 0.10-0.40 only.  rep_hold's up/down profit 10/08-10/23 (+$1,276) all came from
-        # fills at 0.10-0.40 (0.40-0.70 lost) - but +$1,553 of it in one week (10/12-10/16),
-        # and the band was picked from those same days, so it must hold on NEW days.
-        "rep_cheap": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"updown"}, "repeat": REPEAT,
-                      "flip": None, "min_price": 0.10, "max_price": 0.40},
-        # Test 2 (user, 2026-10-23; decide 2026-11-06): rep_hold's rule as a MAKER - a
-        # resting bid at model price - 0.05 (never at/above the ask), no taker fee, filled
-        # only when a later book's best ask is BELOW the bid (a seller traded through it).
-        # Live paid $18 of fees on $32 gross; makers pay none.  Paper only.
-        "mk_hold": {"min_edge": 0.05, "slots": {"early"}, "maker": True, "repeat": REPEAT,
-                    "flip": None},
     },
     "live": {
         # 2026-10-08 (user): strikes only, 2 buys, 15 min apart, same side, with the

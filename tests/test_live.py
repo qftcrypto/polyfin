@@ -5,6 +5,7 @@ import unittest
 
 import numpy as np
 
+from polyfin.live import config as C
 from polyfin.live.control import RANK
 from polyfin.live.executor import PaperExecutor
 from polyfin.live.fees import fee_per_share, taker_fee
@@ -15,7 +16,13 @@ from polyfin.live.sizing import limit_price, shares_for
 # retired arms whose engine paths are still tested
 RETIRED = {"late_blend": {"min_edge": 0.05, "slots": {"late"}, "blend": (0.19, 0.92)},
            "rep_flip": {"min_edge": 0.05, "slots": {"early"}, "flip": 0.05,
-                        "repeat": {"spacing_s": 900, "max_buys": 10, "market_cap_usd": 30.0}}}
+                        "repeat": {"spacing_s": 900, "max_buys": 10, "market_cap_usd": 30.0}},
+           "rep_hold": {"min_edge": 0.05, "slots": {"early"}, "repeat": C.REPEAT, "flip": None},
+           "rep_flip10": {"min_edge": 0.05, "slots": {"early"}, "repeat": C.REPEAT, "flip": 0.10},
+           "rep_cheap": {"min_edge": 0.05, "slots": {"early"}, "kinds": {"updown"}, "repeat": C.REPEAT,
+                         "flip": None, "min_price": 0.10, "max_price": 0.40},
+           "mk_hold": {"min_edge": 0.05, "slots": {"early"}, "maker": True, "repeat": C.REPEAT,
+                       "flip": None}}
 
 class TestSizing(unittest.TestCase):
     def test_limit_keeps_the_edge_after_fee(self):
@@ -85,18 +92,16 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(twin, C.ARMS["paper"]["strike2"])     # paper twin (keeps SPY)
         self.assertEqual(C.LIMITS["live"], {})                 # wallet balance only
         self.assertEqual(set(C.ARMS["paper"]),
-                         {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
+                         {"late_1h", "fav50",
                           "strike2", "ud_band", "strike2_agree", "strike2_perp",
                           "strike2_05", "strike2_flat", "strike2_hedge",
-                          "strike2_allday", "strike2_v2", "rep_cheap", "mk_hold", "strike2_calm", "longshot2"})
+                          "strike2_allday", "strike2_v2", "strike2_calm", "longshot2"})
         calm = {k: v for k, v in C.ARMS["paper"]["strike2_calm"].items() if k != "calm"}
         self.assertEqual(calm, C.ARMS["live"]["strike2"])     # live rule + calm filter only
         self.assertTrue(all(c["min_edge"] == (0.08 if a in ("strike2", "strike2_flat",
                                                              "strike2_hedge", "strike2_allday",
                                                              "strike2_v2", "strike2_calm") else 0.05)
                             for a, c in C.ARMS["paper"].items() if "longshot" not in c))
-        self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
-                         {"rep_hold": None, "rep_flip10": 0.10})
 
     def test_paper_has_no_caps_live_does(self):
         from polyfin.live.engine import blocked
@@ -374,7 +379,7 @@ class TestMakerDB(TestLadderDB):
         from polyfin.live import config as C
         books = {"tokY": {"bids": [(yes_bid, 100.0)], "asks": [(yes_ask, 100.0)], "ts": 0},
                  "tokN": {"bids": [(no_bid, 100.0)], "asks": [(no_ask, 100.0)], "ts": 0}}
-        self.trader._run_maker_arm("paper", "mk_hold", C.ARMS["paper"]["mk_hold"],
+        self.trader._run_maker_arm("paper", "mk_hold", RETIRED["mk_hold"],
                                    [(self.spec, p, (0, 0, 1e-4, 1))], {self.cid: "tokN"},
                                    books, at, None)
         return [(st, sd, round(lim, 2), sh) for st, sd, lim, sh in self.conn.execute(
