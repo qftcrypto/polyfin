@@ -61,7 +61,12 @@ STRIKE_GAMMA = 0.0
 STRIKE_B_MIN_ROWS = 2000
 # The comparison arm strike2_regime prices strikes with the model live used up to 10/16,
 # FROZEN (operator 2026-10-17): regime scaling gamma 0.5, strike_b 1.3 - not refitted.
-REGIME_FROZEN = {"gamma": 0.5, "strike_b": 1.3}
+REGIME_FROZEN = {"gamma": 0.5, "strike_b": 1.0}
+# NO SHARPENING anywhere (user, 2026-11-09): P = Phi(d), b = 1.  Live strike2 bets said 79.7%
+# win, paid 70.0c, won 70.3% - strike_b 1.3 made the model ~10 points overconfident.  Without
+# it, held-out Oct 26-Nov 9: 0.94 predictions came true 0.91 (sharpened: 0.83), Brier 0.0915 vs
+# 0.0935 (market 0.0905).  The refit no longer fits b / strike_b; prob() ignores them.
+SHARPEN = False
 
 
 class Stage2:
@@ -156,6 +161,8 @@ class Stage2:
             else:
                 gamma = self.params.get("strike_gamma", gamma)
                 b = by.get("flat", self.params.get("strike_b", 1.0))
+        if not SHARPEN:
+            b = 1.0
         return float(prob_vec(np.array([f[1]]), np.array([f[2]]), np.array([f[3]]), gamma, b)[0])
 
 
@@ -321,14 +328,16 @@ def main() -> None:
     params["gamma"] = fit_sharp(a, np.ones_like(a["y"], dtype=bool), fit_b=False)["gamma"]
     params["sharpen_hours"] = SHARPEN_HOURS
     params["strike_gamma"] = STRIKE_GAMMA
-    params["strike_b"] = float(fit_strike_b(a, strike_rows(a), STRIKE_GAMMA))
+    params["strike_b"] = float(fit_strike_b(a, strike_rows(a), STRIKE_GAMMA)) if SHARPEN else 1.0
     series = np.array([{s.condition_id: s.series_slug for s in specs}[c] for c in a["cid"]])
     params["strike_b_series"] = {}
-    for sl in sorted(set(series[strike_rows(a)])):
+    for sl in sorted(set(series[strike_rows(a)])) if SHARPEN else []:
         m = strike_rows(a) & (series == sl)
         if m.sum() >= STRIKE_B_MIN_ROWS:
             params["strike_b_series"][sl] = {"flat": float(fit_strike_b(a, m, STRIKE_GAMMA)),
                                              "rows": int(m.sum())}
+    if not SHARPEN:
+        params["b"] = 1.0
     pfull = prob_vec(a["xn"], a["v"], a["R"], params["gamma"], params["b"])
     params["blend"] = [float(x) for x in fit_blend(pfull, a["pm"], a["y"])]
     params["fitted_at"] = int(time.time())

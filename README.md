@@ -95,6 +95,10 @@ their own prints are stale (`S_last · exp(β · r_ES/NQ)`, β from 15m regular-
 **vol-regime scaling** `v · R^γ` (trailing-6h realized / expected); **sharpening** `Φ(b·d)`;
 and an optional **market blend**. Fitted and scored leave-one-day-out.
 
+**No sharpening since 2026-11-09** (`stage2.SHARPEN = False`): every market is priced
+`P = Φ(d)`. The strikes sharpening (`strike_b` 1.3) made live bets ~10 points overconfident
+(said 79.7% win, paid 70.0¢, won 70.3%); the refit no longer fits `b` / `strike_b`.
+
 ```sh
 .venv/bin/python -m polyfin.stage2         # evaluate, then fit on all days -> data/stage2_params.json
 .venv/bin/python -m polyfin.stage2 --live  # price open markets with the saved fit
