@@ -68,6 +68,16 @@ ARMS = {
                          "model": "regime", "quiet_hours": (18, 6), "speed_guard": 2.0,
                          "repeat": {"spacing_s": 15 * 60, "max_buys": 2, "market_cap_usd": 10.0},
                          "flip": None},
+        # Longshot test (user, 2026-11-09; decide after 6 weeks AND ~60 markets, ~2026-12-21):
+        # WTI strikes > 3h out, best ask <= 0.07 and the honest model (no sharpening, regime
+        # variant) >= 2x the ask; walk the book up to min(0.07, p/2), up to $10 per market,
+        # buying again every 15 min until the $10 is spent.  On Oct 8 - Nov 9 (fit on those
+        # days, 1 of 16 ceiling/k combos): +$429 on $168, but 3 wins on 2 days (mostly 10/16)
+        # and -$2 since 10/26; no combo was positive in both halves.  Pass: P&L > 0.
+        "longshot2": {"slots": {"early"}, "kinds": {"strikes"}, "series": {"wti-daily-close-uo"},
+                      "model": "regime",
+                      "longshot": {"k": 2.0, "max_price": 0.07, "market_cap_usd": 10.0,
+                                   "spacing_s": 15 * 60}},
         # the live rule on the NEW strikes model (no vol-regime scaling, per-series strike_b)
         "strike2_flat": {"min_edge": 0.08, "slots": {"early"}, "kinds": {"strikes"},
                          "quiet_hours": (18, 6),

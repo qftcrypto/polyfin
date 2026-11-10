@@ -83,7 +83,12 @@ def et_day(ts):
 def describe(cfg) -> str:
     """The arm's rule in one line, read from the arm as configured."""
     g = lambda x: ("%.4f" % x).rstrip("0").rstrip(".")
-    parts = ["edge >= %s%s" % (g(cfg["min_edge"]), " < %s" % g(cfg["max_edge"]) if "max_edge" in cfg else "")]
+    if "longshot" in cfg:
+        ls = cfg["longshot"]
+        parts = ["LONGSHOT: ask <= %s and model >= %sx the ask, up to $%s/mkt, every %d min"
+                 % (g(ls["max_price"]), g(ls["k"]), g(ls["market_cap_usd"]), ls["spacing_s"] // 60)]
+    else:
+        parts = ["edge >= %s%s" % (g(cfg["min_edge"]), " < %s" % g(cfg["max_edge"]) if "max_edge" in cfg else "")]
     if "rungs" in cfg and len(cfg["rungs"]) > 1:
         parts.append("buys at edge " + " / ".join(g(r) for r in cfg["rungs"]))
     if "repeat" in cfg:

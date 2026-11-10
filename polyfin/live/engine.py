@@ -364,9 +364,10 @@ class Trader:
         variants = {k: [(s, *alt.get(s.condition_id, (p, f))) for s, p, f in priced]
                     for k, alt in self.alts.items()}
         for arm, cfg in C.ARMS[mode].items():
-            if cfg.get("maker") and mode != "paper":
-                continue                                # maker arms are a paper test only
+            if (cfg.get("maker") or "longshot" in cfg) and mode != "paper":
+                continue                                # maker / longshot: paper tests only
             run = (self._run_maker_arm if cfg.get("maker") else
+                   self._run_longshot_arm if "longshot" in cfg else
                    self._run_repeat_arm if "repeat" in cfg else self._run_arm)
             pr = variants[cfg["model"]] if cfg.get("model") else priced
             balance = run(mode, arm, cfg, pr, tokens, books, now, balance)
@@ -696,6 +697,58 @@ class Trader:
             entered += 1
         if "hedge" in cfg and mode == "paper":
             entered += self._hedge(mode, arm, cfg, priced, tokens, books, now)
+        risk = risk_state(conn, mode, time.time(), arm)
+        log.info("%s/%s: %d markets priced, %d entries | today %d orders, open $%.2f, pnl $%+.2f",
+                 mode, arm, len(priced), entered, risk["orders_today"], risk["open_usd"],
+                 risk["pnl_today"])
+        return balance
+
+    def _run_longshot_arm(self, mode, arm, cfg, priced, tokens, books, now, balance):
+        """Longshots the model rates >= k x their price (user, 2026-11-09).
+
+        A side qualifies when its best ask <= max_price and model p >= k x ask.  The order
+        walks the book up to lim = min(max_price, p / k) in whole cents, sized to what is
+        left of market_cap_usd, and the market may buy again every spacing_s until the cap
+        is spent (same side).  Paper only.
+        """
+        conn, ls = self.conn, cfg["longshot"]
+        entered = 0
+        for s, p, f in priced:
+            slot = slot_for(s.target_ts - now)
+            if slot not in cfg["slots"] or not self._eligible(cfg, s):
+                continue
+            st = repeat_state(conn, mode, arm, s.condition_id, slot)
+            left = ls["market_cap_usd"] - st["cost"]
+            if st["last_buy"] is not None and now - st["last_buy"] < ls["spacing_s"]:
+                continue
+            if st["last_nofill"] is not None and now - st["last_nofill"] < ls["spacing_s"]:
+                continue
+            for side, tok, ps in (("yes", s.token_yes, p), ("no", tokens[s.condition_id], 1 - p)):
+                if st["last_side"] is not None and side != st["last_side"]:
+                    continue
+                bk = books.get(tok)
+                if not bk or not bk["asks"]:
+                    continue
+                ask = bk["asks"][0][0]
+                if not (0 < ask <= ls["max_price"] and ps >= ls["k"] * ask):
+                    continue
+                lim = min(ls["max_price"], math.floor(ps / ls["k"] * 100 + 1e-9) / 100)
+                if lim < ask - 1e-9:                    # whole-cent limit below a sub-cent ask
+                    continue
+                shares, budget = 0.0, left                # walk the book: spend up to `left`
+                for px, size in bk["asks"]:
+                    if px > lim + 1e-9 or budget <= 0:
+                        break
+                    q = min(size, budget / (px + fee_per_share(px)))
+                    shares += q
+                    budget -= q * (px + fee_per_share(px))
+                shares = math.floor(shares + 1e-9)
+                if shares < C.MIN_SHARES:
+                    continue
+                self._enter(mode, arm, s, side, tok, ps, ps - ask - fee_per_share(ask), lim,
+                            shares, bk, f, now, slot, st["next_leg"])
+                entered += 1
+                break
         risk = risk_state(conn, mode, time.time(), arm)
         log.info("%s/%s: %d markets priced, %d entries | today %d orders, open $%.2f, pnl $%+.2f",
                  mode, arm, len(priced), entered, risk["orders_today"], risk["open_usd"],

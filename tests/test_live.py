@@ -88,13 +88,13 @@ class TestSlots(unittest.TestCase):
                          {"rep_hold", "rep_flip10", "late_1h", "fav50", "min15",
                           "strike2", "ud_band", "strike2_agree", "strike2_perp",
                           "strike2_05", "strike2_flat", "strike2_hedge",
-                          "strike2_allday", "strike2_v2", "rep_cheap", "mk_hold", "strike2_calm"})
+                          "strike2_allday", "strike2_v2", "rep_cheap", "mk_hold", "strike2_calm", "longshot2"})
         calm = {k: v for k, v in C.ARMS["paper"]["strike2_calm"].items() if k != "calm"}
         self.assertEqual(calm, C.ARMS["live"]["strike2"])     # live rule + calm filter only
         self.assertTrue(all(c["min_edge"] == (0.08 if a in ("strike2", "strike2_flat",
                                                              "strike2_hedge", "strike2_allday",
                                                              "strike2_v2", "strike2_calm") else 0.05)
-                            for a, c in C.ARMS["paper"].items()))
+                            for a, c in C.ARMS["paper"].items() if "longshot" not in c))
         self.assertEqual({a: C.ARMS["paper"][a]["flip"] for a in ("rep_hold", "rep_flip10")},
                          {"rep_hold": None, "rep_flip10": 0.10})
 
@@ -421,6 +421,57 @@ class TestMakerDB(TestLadderDB):
     def test_maker_never_runs_live(self):
         from polyfin.live import config as C
         self.assertFalse(any(cfg.get("maker") for cfg in C.ARMS["live"].values()))
+
+
+class TestLongshotDB(TestLadderDB):
+    """longshot2: model >= 2x a cheap ask, walk the book up to min(0.07, p/2), <= $10/market."""
+
+    def run_ls(self, p, yes_asks, no_asks, at, tau_h=20):
+        from polyfin.live import config as C
+        from polyfin.stage1 import Spec
+        spec = Spec(self.cid, "wti-daily-close-uo", "strikes", "CL=F", "tokY", int(at + tau_h * 3600),
+                    int(at - 3600), 90.0, None, int(at + tau_h * 3600))
+        books = {"tokY": {"bids": [], "asks": yes_asks, "ts": 0},
+                 "tokN": {"bids": [], "asks": no_asks, "ts": 0}}
+        self.trader._run_longshot_arm("paper", "longshot2", C.ARMS["paper"]["longshot2"],
+                                      [(spec, p, (0, 0, 1e-4, 1))], {self.cid: "tokN"}, books, at, None)
+        return [(st, sd, round(lim, 2), round(sh, 1), round(px or 0, 3)) for st, sd, lim, sh, px in self.conn.execute(
+            "SELECT status, side, limit_price, shares_filled, avg_price FROM trade.orders "
+            "WHERE condition_id = %s AND arm = 'longshot2' ORDER BY id", (self.cid,)).fetchall()]
+
+    def test_buys_cheap_side_up_to_p_over_k(self):
+        # p_yes 0.10, Yes asks 0.03 (40 sh), 0.05 (100 sh), 0.06 (100 sh): limit min(0.07, 0.05) = 0.05
+        rows = self.run_ls(0.10, [(0.03, 40.0), (0.05, 100.0), (0.06, 100.0)], [(0.97, 100.0)], self.now)
+        self.assertEqual(len(rows), 1)
+        st, sd, lim, sh, px = rows[0]
+        self.assertEqual((st, sd, lim), ("filled", "yes", 0.05))    # sized to what the book holds <= 0.05
+        self.assertLessEqual(sh * px, 10.0 + 1e-6)                 # <= $10 of shares
+        self.assertGreater(sh, 40)                                  # walked past the 0.03 level
+
+    def test_skips(self):
+        t = self.now
+        self.assertEqual(self.run_ls(0.10, [(0.08, 100.0)], [(0.95, 100.0)], t), [])     # ask > 0.07
+        self.assertEqual(self.run_ls(0.09, [(0.05, 100.0)], [(0.95, 100.0)], t + 1), [])  # 0.09 < 2 x 0.05
+        self.assertEqual(self.run_ls(0.20, [(0.05, 100.0)], [(0.95, 100.0)], t + 2, tau_h=2), [])  # < 3h out
+
+    def test_spacing_and_cap(self):
+        t = self.now
+        thin = [(0.02, 50.0)]                                       # $1 per visit
+        self.run_ls(0.10, thin, [(0.99, 10.0)], t)
+        self.assertEqual(len(self.run_ls(0.10, thin, [(0.99, 10.0)], t + 600)), 1)   # within 15 min
+        rows = self.run_ls(0.10, thin, [(0.99, 10.0)], t + 901)
+        self.assertEqual([r[0] for r in rows], ["filled", "filled"])
+        deep = [(0.02, 10000.0)]
+        rows = self.run_ls(0.10, deep, [(0.99, 10.0)], t + 1802)
+        spent = self.conn.execute("SELECT sum(shares_filled * avg_price + fee) FROM trade.orders "
+                                  "WHERE condition_id = %s", (self.cid,)).fetchone()[0]
+        self.conn.commit()
+        self.assertAlmostEqual(spent, 10.0, delta=0.05)            # cap reached, fees included
+        self.assertEqual(len(self.run_ls(0.10, deep, [(0.99, 10.0)], t + 2703)), 3)  # nothing more
+
+    def test_longshot_never_runs_live(self):
+        from polyfin.live import config as C
+        self.assertFalse(any("longshot" in cfg for cfg in C.ARMS["live"].values()))
 
 
 class TestControlAliases(unittest.TestCase):
